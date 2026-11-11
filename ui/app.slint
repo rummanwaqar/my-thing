@@ -1,20 +1,43 @@
 import "fonts/Fredoka-Regular.ttf";
 import "fonts/Fredoka-SemiBold.ttf";
 
-import { Button, VerticalBox } from "std-widgets.slint";
-
 export component MainWindow inherits Window {
     default-font-family: "Fredoka";
 
     width: 800px;
     height: 480px;
 
-    in-out property <int> counter: 0;
-    callback clicked();
+    property <length> pulse-size: 80px + 30px * sin(animation-tick() / 1.5s * 360deg);
+    in property <int> fps: 0;
+    in property <string> time;
 
-    VerticalBox {
-        Text { text: "Hello, My Thinbg"; font-size: 32px; font-weight: 600; }
-        Text { text : "Clicked " + root.counter + " times"; font-size: 32px; }
-        Button { text: "Click Me"; clicked => { root.clicked(); } }
+    Text {
+        text: "Hello My Thing";
+        font-size: 64px;
+        font-weight: 600;
+    }
+
+    Text {
+        text: "\{root.fps} fps";
+        font-size: 16px;
+        x: parent.width - self.width - 8px;
+        y: 8px;
+    }
+
+    Rectangle {
+        width: root.pulse-size;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: #e8553f;
+        x: (parent.width - self.width) / 2;
+        y: parent.height * 0.75 - self.height / 2;
+        opacity: 0.6 + 0.4 * sin(animation-tick() / 1.5s * 360deg);
+    }
+
+    Text {
+        text: root.time;
+        font-size: 16px;
+        x: 8px;
+        y: 8px;
     }
 }

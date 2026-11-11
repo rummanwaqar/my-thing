@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+chrono = "0.4.45"
 evdev = { version = "0.13.2", optional = true }
 slint = { version = "1.18.1", default-features = false, features = ["std",  "compat-1-2"] }
 
