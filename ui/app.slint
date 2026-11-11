@@ -1,0 +1,14 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    width: 800px;
+    height: 480px;
+
+    in-out property <int> counter: 0;
+    callback clicked();
+
+    VerticalBox {
+        Text { text : "Clicked " + root.counter + " times"; font-size: 32px; }
+        Button { text: "Click Me"; clicked => { root.clicked(); } }
+    }
+}
