@@ -1,0 +1,28 @@
+// Colors and sizes from the "Pomodoro" page of the design canvas.
+export global Theme {
+    // Dark screens (Idle, Focus)
+    out property <color> bg: #111111;
+    out property <color> text: #ffffff;
+    out property <color> text-dim: #aaaaaa;
+    out property <color> hint: #999999;
+    out property <color> pill: #262626;
+    out property <color> track: #2a2a2a;
+    out property <color> chip-border: #333333;
+
+    // Pomo the tomato
+    out property <color> tomato: #ff5a4e;
+    out property <color> tomato-dark: #e0483d;
+
+    // Type: Inter for text, rounded Fredoka for the big countdown (suits Pomo better).
+    out property <string> time-font: "Fredoka";
+    out property <int> time-weight: 600;
+    out property <length> pill-size: 14px;
+    out property <length> time-size: 120px;
+    out property <length> sub-size: 18px;
+    out property <length> hint-size: 14px;
+
+    // Layout shared by every screen: 800×480, character area on the left, text on the right.
+    out property <length> side-padding: 56px;
+    out property <length> character-size: 340px;
+    out property <length> column-gap: 48px;
+}

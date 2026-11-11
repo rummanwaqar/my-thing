@@ -1,0 +1,46 @@
+import { Theme } from "theme.slint";
+import { DotRing } from "parts.slint";
+
+export enum PomoMood { sleepy, focused, relaxed, excited }
+
+// Pomo the tomato in its 340×340 character area, with the ring behind it.
+// Animations are driven by animation-tick() (milliseconds since start).
+export component Pomo {
+    in property <PomoMood> mood;
+
+    width: Theme.character-size;
+    height: Theme.character-size;
+
+    property <float> t: animation-tick() / 1ms;
+
+    if root.mood == PomoMood.sleepy: Rectangle {
+        DotRing { }
+
+        // Three z's floating up and fading, 3 s each, started 1 s apart.
+        for letter[i] in ["z", "z", "Z"]: Text {
+            property <float> p: mod(root.t + i * 1000, 3000) / 3000; // 0 → 1
+            property <float> eased: 1 - (1 - self.p) * (1 - self.p);  // ease-out
+            text: letter;
+            font-size: 26px;
+            font-weight: 800;
+            color: Theme.text-dim;
+            x: 228px + 26px * self.eased;
+            y: 44px - 60px * self.eased;
+            transform-scale: 0.7 + 0.45 * self.eased;
+            opacity: self.p < 0.25 ? self.p / 0.25 : 1 - (self.p - 0.25) / 0.75;
+        }
+
+        // Breathing: a slight squash every 4 s, anchored near the bottom.
+        Image {
+            property <float> breath: (1 - cos(root.t / 4000 * 360deg)) / 2; // 0 → 1 → 0
+            source: @image-url("images/pomo-sleepy.svg");
+            x: 50px;
+            y: 50px;
+            width: 240px;
+            height: 240px;
+            transform-origin: { x: self.width / 2, y: self.height * 0.9 };
+            transform-scale-x: 1 + 0.025 * self.breath;
+            transform-scale-y: 1 - 0.015 * self.breath;
+        }
+    }
+}

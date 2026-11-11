@@ -40,5 +40,5 @@ cargo device-run
 - `cargo device-build` only builds: `target/aarch64-unknown-linux-gnu/release/my-thing`
 - `DEVICE=10.42.1.74 cargo device-run` if mDNS doesn't resolve
 - `SLINT_DEBUG_PERFORMANCE=refresh_lazy,overlay cargo device-run` shows FPS
-- `SLINT_BACKEND=linuxkms-software cargo device-run` uses the software renderer
+- Uses the software renderer by default (femtovg draws rotated text as outlines, which looks bolder); `SLINT_BACKEND=linuxkms-femtovg cargo device-run` uses the GPU renderer
 - Restore the kiosk: `ssh root@superbird-kiosk.local reboot`

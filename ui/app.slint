@@ -1,26 +1,20 @@
-import "fonts/Fredoka-Regular.ttf";
-import "fonts/Fredoka-SemiBold.ttf";
+import "fonts/Inter-SemiBold.ttf";
+import "fonts/Inter-Bold.ttf";
+import "fonts/Inter-ExtraBold.ttf";
+import "fonts/Inter-Black.ttf";
+import "fonts/Fredoka-SemiBold.ttf"; // countdown digits
 
-// Mirrors pomodoro::Phase. `break` is avoided as a name, hence `on-break`.
-export enum PomoPhase { ready, focus, focus-done, on-break, break-done }
+import { PomoPhase, PomoView } from "pomodoro/types.slint";
+import { PomodoroApp } from "pomodoro/app.slint";
 
-// Mirrors pomodoro::View, already formatted for display (main.rs `push`).
-export struct PomoView {
-    phase: PomoPhase,
-    paused: bool,
-    preset: int,
-    time: string,      // "18:42"
-    progress: float,   // 0.0 → 1.0 elapsed
-    focus-min: int,
-    break-min: int,
-}
+// Re-exported so Rust can construct them (main.rs `push`).
+export { PomoPhase, PomoView }
 
-// Phase 1 debug screen: shows every value Rust sends, no styling yet.
+// Owns the input and hosts the current app. Later, presets 1–4 will switch apps here.
 export component MainWindow inherits Window {
-    default-font-family: "Fredoka";
+    default-font-family: "Inter";
     width: 800px;
     height: 480px;
-    background: #111111;
 
     in property <PomoView> pomo;
     in property <[string]> preset-labels;   // "25 / 5", ... from pomodoro::PRESETS
@@ -30,20 +24,6 @@ export component MainWindow inherits Window {
     callback knob-pressed();
     callback preset(int);      // 1–4
     callback back();
-
-    property <string> phase-label:
-        pomo.phase == PomoPhase.ready      ? "READY" :
-        pomo.phase == PomoPhase.focus      ? (pomo.paused ? "PAUSED" : "FOCUS") :
-        pomo.phase == PomoPhase.focus-done ? "FOCUS DONE!" :
-        pomo.phase == PomoPhase.on-break   ? (pomo.paused ? "PAUSED" : "BREAK") :
-                                             "BREAK OVER!";
-
-    property <string> hint:
-        pomo.phase == PomoPhase.ready      ? "Press knob: start · Turn: change preset" :
-        pomo.phase == PomoPhase.focus      ? "Press knob: " + (pomo.paused ? "resume" : "pause") + " · Turn: ±1 min" :
-        pomo.phase == PomoPhase.focus-done ? "Press knob: start break · Turn: 5 more minutes of focus" :
-        pomo.phase == PomoPhase.on-break   ? "Press knob: skip break · Turn: ±1 min" :
-                                             "Press knob: start focus · Turn: 5 more minutes of break";
 
     forward-focus: fs;
 
@@ -61,61 +41,11 @@ export component MainWindow inherits Window {
             return reject;
         }
 
-        VerticalLayout {
-            padding: 56px;
-            spacing: 16px;
-            alignment: center;
-
-            Text {
-                text: root.phase-label;
-                font-size: 24px;
-                font-weight: 600;
-                color: #aaaaaa;
-            }
-
-            Text {
-                text: root.pomo.time;
-                font-size: 120px;
-                font-weight: 600;
-                color: root.pomo.paused ? #666666 : #ffffff;
-            }
-
-            // Progress bar: track + fill.
-            Rectangle {
-                height: 8px;
-                border-radius: 4px;
-                background: #2a2a2a;
-
-                Rectangle {
-                    x: 0;
-                    width: parent.width * root.pomo.progress;
-                    border-radius: 4px;
-                    background: #ff5a4e;
-                }
-            }
-
-            if root.pomo.phase == PomoPhase.ready: HorizontalLayout {
-                spacing: 24px;
-                alignment: start;
-
-                for label[i] in root.preset-labels: Text {
-                    text: label;
-                    font-size: 20px;
-                    color: i == root.pomo.preset ? #ff5a4e : #666666;
-                }
-            }
-
-            Text {
-                text: root.pomo.focus-min + " min focus, " + root.pomo.break-min + " min break";
-                font-size: 18px;
-                color: #aaaaaa;
-            }
-
-            Text {
-                text: root.hint;
-                font-size: 16px;
-                color: #999999;
-            }
+        PomodoroApp {
+            width: 100%;
+            height: 100%;
+            pomo: root.pomo;
+            preset-labels: root.preset-labels;
         }
     }
 }

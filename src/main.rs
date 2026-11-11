@@ -82,7 +82,7 @@ fn push(ui: &MainWindow, v: &View) {
         paused: v.paused,
         // Slint ints are i32; all of these are small (preset < 3, minutes ≤ 50).
         preset: v.preset as i32,
-        time: format!("{}:{:02}", v.remaining_secs / 60, v.remaining_secs % 60).into(),
+        remaining_secs: v.remaining_secs as i32,
         progress: v.progress,
         focus_min: v.focus_min as i32,
         break_min: v.break_min as i32,

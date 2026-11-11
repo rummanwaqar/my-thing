@@ -1,0 +1,129 @@
+import { Theme } from "theme.slint";
+import { PomoPhase, PomoView } from "types.slint";
+import { Pill, TimeText } from "parts.slint";
+import { Pomo, PomoMood } from "pomo.slint";
+
+// Screen 1 · Idle (sleepy)
+export component IdleScreen inherits Rectangle {
+    in property <PomoView> pomo;
+    in property <[string]> preset-labels;
+
+    background: Theme.bg;
+
+    // Centered as a group, so the left and right margins match.
+    HorizontalLayout {
+        alignment: center;
+        spacing: Theme.column-gap;
+
+        VerticalLayout {
+            alignment: center;
+            Pomo { mood: PomoMood.sleepy; }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 12px;
+
+            HorizontalLayout {
+                alignment: start;
+                Pill { text: "READY"; }
+            }
+
+            TimeText { seconds: root.pomo.remaining-secs; }
+
+            Text {
+                text: "\{root.pomo.focus-min} min focus, \{root.pomo.break-min} min break";
+                font-size: Theme.sub-size;
+                font-weight: 600;
+                color: Theme.text-dim;
+            }
+
+            HorizontalLayout {
+                alignment: start;
+                spacing: 10px;
+                padding-top: 4px;
+
+                for label[i] in root.preset-labels: Pill {
+                    property <bool> selected: i == root.pomo.preset;
+                    text: label;
+                    fill: transparent;
+                    outline: self.selected ? Theme.tomato : Theme.chip-border;
+                    text-color: self.selected ? Theme.text : Theme.text-dim;
+                    font-size: 15px;
+                    letter-spacing: 0;
+                    // CSS padding sits inside a 2px border; Slint's border is drawn inside the padding.
+                    padding-x: 18px;
+                    padding-y: 10px;
+                }
+            }
+
+            VerticalLayout {
+                padding-top: 18px;
+                Text {
+                    text: "Press knob: start · Turn: change preset";
+                    font-size: Theme.hint-size;
+                    font-weight: 700;
+                    color: Theme.hint;
+                }
+            }
+        }
+    }
+}
+
+// Temporary: the Phase 1 debug screen for the states not designed yet.
+export component DebugScreen inherits Rectangle {
+    in property <PomoView> pomo;
+
+    property <string> phase-label:
+        root.pomo.phase == PomoPhase.ready      ? "READY" :
+        root.pomo.phase == PomoPhase.focus      ? (root.pomo.paused ? "PAUSED" : "FOCUS") :
+        root.pomo.phase == PomoPhase.focus-done ? "FOCUS DONE!" :
+        root.pomo.phase == PomoPhase.on-break   ? (root.pomo.paused ? "PAUSED" : "BREAK") :
+                                             "BREAK OVER!";
+
+    property <string> hint:
+        root.pomo.phase == PomoPhase.ready      ? "Press knob: start · Turn: change preset" :
+        root.pomo.phase == PomoPhase.focus      ? "Press knob: " + (root.pomo.paused ? "resume" : "pause") + " · Turn: ±1 min" :
+        root.pomo.phase == PomoPhase.focus-done ? "Press knob: start break · Turn: 5 more minutes of focus" :
+        root.pomo.phase == PomoPhase.on-break   ? "Press knob: skip break · Turn: ±1 min" :
+                                             "Press knob: start focus · Turn: 5 more minutes of break";
+
+    background: Theme.bg;
+
+    VerticalLayout {
+        padding: Theme.side-padding;
+        spacing: 16px;
+        alignment: center;
+
+        Text {
+            text: root.phase-label;
+            font-size: 24px;
+            font-weight: 600;
+            color: Theme.text-dim;
+        }
+
+        TimeText {
+            seconds: root.pomo.remaining-secs;
+            color: root.pomo.paused ? Theme.text-dim : Theme.text;
+        }
+
+        Rectangle {
+            height: 8px;
+            border-radius: 4px;
+            background: Theme.track;
+
+            Rectangle {
+                x: 0;
+                width: parent.width * root.pomo.progress;
+                border-radius: 4px;
+                background: Theme.tomato;
+            }
+        }
+
+        Text {
+            text: root.hint;
+            font-size: 16px;
+            color: Theme.hint;
+        }
+    }
+}

@@ -1,0 +1,13 @@
+// Mirrors pomodoro::Phase. `break` is avoided as a name, hence `on-break`.
+export enum PomoPhase { ready, focus, focus-done, on-break, break-done }
+
+// Mirrors pomodoro::View (built in main.rs `push`).
+export struct PomoView {
+    phase: PomoPhase,
+    paused: bool,
+    preset: int,
+    remaining-secs: int,
+    progress: float,   // 0.0 → 1.0 elapsed
+    focus-min: int,
+    break-min: int,
+}

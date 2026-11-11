@@ -1,0 +1,82 @@
+import { Theme } from "theme.slint";
+
+// Rounded label: READY / FOCUS pills, preset chips.
+export component Pill inherits Rectangle {
+    in property <string> text;
+    in property <color> fill: Theme.pill;
+    in property <color> text-color: Theme.text;
+    in property <color> outline: transparent;
+    in property <length> font-size: Theme.pill-size;
+    in property <length> letter-spacing: 2px;
+    in property <length> padding-x: 14px;
+    in property <length> padding-y: 7px;
+
+    background: root.fill;
+    border-radius: self.height / 2;
+    border-width: 2px; // drawn inside, so a transparent outline changes nothing
+    border-color: root.outline;
+
+    HorizontalLayout {
+        padding-left: root.padding-x;
+        padding-right: root.padding-x;
+        padding-top: root.padding-y;
+        padding-bottom: root.padding-y;
+
+        Text {
+            text: root.text;
+            color: root.text-color;
+            font-size: root.font-size;
+            font-weight: 800;
+            letter-spacing: root.letter-spacing;
+        }
+    }
+}
+
+// "m:ss" with every character in a fixed-width cell. Slint can't turn on tabular
+// figures, so without this the time would shift sideways as digits change.
+export component TimeText {
+    in property <int> seconds;
+    in property <color> color: Theme.text;
+    in property <length> font-size: Theme.time-size;
+
+    property <int> minutes: floor(root.seconds / 60);
+    property <int> secs: mod(root.seconds, 60);
+    property <[string]> chars: root.minutes >= 10
+        ? ["\{floor(root.minutes / 10)}", "\{mod(root.minutes, 10)}", ":", "\{floor(root.secs / 10)}", "\{mod(root.secs, 10)}"]
+        : ["\{root.minutes}", ":", "\{floor(root.secs / 10)}", "\{mod(root.secs, 10)}"];
+
+    HorizontalLayout {
+        for char in root.chars: Text {
+            text: char;
+            width: root.font-size * (char == ":" ? 0.28 : 0.6);
+            height: root.font-size; // like CSS line-height: 1
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            font-family: Theme.time-font;
+            font-weight: Theme.time-weight;
+            font-size: root.font-size;
+            color: root.color;
+        }
+    }
+}
+
+// The Idle screen's dashed ring. Slint paths have no dashes, so each dash is a
+// small rounded rectangle placed around the circle and turned to follow it.
+export component DotRing {
+    in property <color> color: Theme.track;
+    in property <length> radius: 155px;
+    in property <int> count: 44;          // circumference 974 px / 22 px per dash in the design
+    in property <length> dash-length: 18px;
+    in property <length> thickness: 14px;
+
+    for i in root.count: Rectangle {
+        property <angle> a: 360deg * i / root.count;
+        width: root.dash-length;
+        height: root.thickness;
+        border-radius: self.height / 2;
+        background: root.color;
+        x: root.width / 2 + root.radius * cos(self.a) - self.width / 2;
+        y: root.height / 2 + root.radius * sin(self.a) - self.height / 2;
+        transform-rotation: self.a + 90deg;
+    }
+}
