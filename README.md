@@ -2,6 +2,20 @@
 
 Slint app for the Spotify Car Thing.
 
+## Pomodoro
+
+Presets: 25/5, 50/10, 15/3 (focus/break minutes).
+
+| State | Knob press | Knob turn | Back (Esc) | Timer reaches 0 |
+|---|---|---|---|---|
+| **Ready** | start Focus at the preset's focus length | cycle presets (wraps) | nothing | n/a |
+| **Focus** | pause / resume | ±1 min per detent, clamped to 1–99 min (also while paused) | → Ready | → FocusDone |
+| **FocusDone** (alarm) | start Break at the preset's break length | Focus for 5 more minutes | → Ready | n/a |
+| **Break** | skip → Ready | ±1 min, same clamp | → Ready | → BreakDone |
+| **BreakDone** (alarm) | start Focus | Break for 5 more minutes | → Ready | n/a |
+
+On the desktop: ←/→ = knob turn, Enter = knob press, Esc = back. To reach an alarm quickly, turn down to 1:00 in Focus or Break.
+
 ## Desktop
 
 ```sh

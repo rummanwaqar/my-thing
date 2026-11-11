@@ -1,39 +1,59 @@
 import "fonts/Fredoka-Regular.ttf";
 import "fonts/Fredoka-SemiBold.ttf";
 
+// Mirrors pomodoro::Phase. `break` is avoided as a name, hence `on-break`.
+export enum PomoPhase { ready, focus, focus-done, on-break, break-done }
+
+// Mirrors pomodoro::View, already formatted for display (main.rs `push`).
+export struct PomoView {
+    phase: PomoPhase,
+    paused: bool,
+    preset: int,
+    time: string,      // "18:42"
+    progress: float,   // 0.0 → 1.0 elapsed
+    focus-min: int,
+    break-min: int,
+}
+
+// Phase 1 debug screen: shows every value Rust sends, no styling yet.
 export component MainWindow inherits Window {
     default-font-family: "Fredoka";
-
     width: 800px;
     height: 480px;
+    background: #111111;
 
-    property <length> pulse-size: 80px + 30px * sin(animation-tick() / 1.5s * 360deg);
-    in property <string> time;
+    in property <PomoView> pomo;
+    in property <[string]> preset-labels;   // "25 / 5", ... from pomodoro::PRESETS
 
-    property <string> last-event: "none";
-    property <int> knob-value: 0;
-
+    // Handled in Rust (main.rs). knob-turned is also invoked by the evdev knob thread on device.
     callback knob-turned(int); // +1 = clockwise; -1 = anticlockwise
     callback knob-pressed();
-    callback preset(int);        // 1–4
+    callback preset(int);      // 1–4
     callback back();
 
-    knob-turned(delta) => {
-        root.knob-value += delta;
-        root.last-event = "knob " + (delta > 0 ? "→" : "←") + "  value " + root.knob-value;
-    }
-    knob-pressed() => { root.last-event = "knob press"; }
-    preset(n) => { root.last-event = "preset " + n; }
-    back() => { root.last-event = "back"; }
+    property <string> phase-label:
+        pomo.phase == PomoPhase.ready      ? "READY" :
+        pomo.phase == PomoPhase.focus      ? (pomo.paused ? "PAUSED" : "FOCUS") :
+        pomo.phase == PomoPhase.focus-done ? "FOCUS DONE!" :
+        pomo.phase == PomoPhase.on-break   ? (pomo.paused ? "PAUSED" : "BREAK") :
+                                             "BREAK OVER!";
+
+    property <string> hint:
+        pomo.phase == PomoPhase.ready      ? "Press knob: start · Turn: change preset" :
+        pomo.phase == PomoPhase.focus      ? "Press knob: " + (pomo.paused ? "resume" : "pause") + " · Turn: ±1 min" :
+        pomo.phase == PomoPhase.focus-done ? "Press knob: start break · Turn: 5 more minutes of focus" :
+        pomo.phase == PomoPhase.on-break   ? "Press knob: skip break · Turn: ±1 min" :
+                                             "Press knob: start focus · Turn: 5 more minutes of break";
 
     forward-focus: fs;
 
     fs := FocusScope {
+        // Desktop key map; on device, gpio-keys send Enter / Esc / 1–4 the same way.
         key-pressed(event) => {
             if (event.text == Key.LeftArrow)  { root.knob-turned(-1); return accept; }
             if (event.text == Key.RightArrow) { root.knob-turned(1);  return accept; }
             if (event.text == Key.Return)     { root.knob-pressed();  return accept; }
-            if (event.text == Key.Escape)  { root.back();          return accept; }
+            if (event.text == Key.Escape)     { root.back();          return accept; }
             if (event.text == "1") { root.preset(1); return accept; }
             if (event.text == "2") { root.preset(2); return accept; }
             if (event.text == "3") { root.preset(3); return accept; }
@@ -41,34 +61,61 @@ export component MainWindow inherits Window {
             return reject;
         }
 
-        Text {
-            text: "Hello My Thing";
-            font-size: 64px;
-            font-weight: 600;
-        }
+        VerticalLayout {
+            padding: 56px;
+            spacing: 16px;
+            alignment: center;
 
-        Rectangle {
-            width: root.pulse-size;
-            height: self.width;
-            border-radius: self.width / 2;
-            background: #e8553f;
-            x: (parent.width - self.width) / 2;
-            y: parent.height * 0.75 - self.height / 2;
-            opacity: 0.6 + 0.4 * sin(animation-tick() / 1.5s * 360deg);
-        }
+            Text {
+                text: root.phase-label;
+                font-size: 24px;
+                font-weight: 600;
+                color: #aaaaaa;
+            }
 
-        Text {
-            text: root.time;
-            font-size: 16px;
-            x: 8px;
-            y: 8px;
-        }
+            Text {
+                text: root.pomo.time;
+                font-size: 120px;
+                font-weight: 600;
+                color: root.pomo.paused ? #666666 : #ffffff;
+            }
 
-        Text {
-            text: "last: " + root.last-event;
-            font-size: 16px;
-            x: 8px;
-            y: parent.height - self.height - 8px;
+            // Progress bar: track + fill.
+            Rectangle {
+                height: 8px;
+                border-radius: 4px;
+                background: #2a2a2a;
+
+                Rectangle {
+                    x: 0;
+                    width: parent.width * root.pomo.progress;
+                    border-radius: 4px;
+                    background: #ff5a4e;
+                }
+            }
+
+            if root.pomo.phase == PomoPhase.ready: HorizontalLayout {
+                spacing: 24px;
+                alignment: start;
+
+                for label[i] in root.preset-labels: Text {
+                    text: label;
+                    font-size: 20px;
+                    color: i == root.pomo.preset ? #ff5a4e : #666666;
+                }
+            }
+
+            Text {
+                text: root.pomo.focus-min + " min focus, " + root.pomo.break-min + " min break";
+                font-size: 18px;
+                color: #aaaaaa;
+            }
+
+            Text {
+                text: root.hint;
+                font-size: 16px;
+                color: #999999;
+            }
         }
     }
 }
