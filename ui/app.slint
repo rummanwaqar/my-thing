@@ -8,20 +8,12 @@ export component MainWindow inherits Window {
     height: 480px;
 
     property <length> pulse-size: 80px + 30px * sin(animation-tick() / 1.5s * 360deg);
-    in property <int> fps: 0;
     in property <string> time;
 
     Text {
         text: "Hello My Thing";
         font-size: 64px;
         font-weight: 600;
-    }
-
-    Text {
-        text: "\{root.fps} fps";
-        font-size: 16px;
-        x: parent.width - self.width - 8px;
-        y: 8px;
     }
 
     Rectangle {
