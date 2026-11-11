@@ -4,7 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-slint = "1.18.1"
+evdev = { version = "0.13.2", optional = true }
+slint = { version = "1.18.1", default-features = false, features = ["std",  "compat-1-2"] }
 
 [build-dependencies]
 slint-build = "1.18.1"
+
+[features]
+default = ["desktop"]
+desktop = ["slint/backend-winit", "slint/renderer-femtovg"]
+device  = ["slint/backend-linuxkms-libinput", "slint/renderer-femtovg", "slint/renderer-software", "dep:evdev"]
