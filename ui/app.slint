@@ -10,26 +10,65 @@ export component MainWindow inherits Window {
     property <length> pulse-size: 80px + 30px * sin(animation-tick() / 1.5s * 360deg);
     in property <string> time;
 
-    Text {
-        text: "Hello My Thing";
-        font-size: 64px;
-        font-weight: 600;
-    }
+    property <string> last-event: "none";
+    property <int> knob-value: 0;
 
-    Rectangle {
-        width: root.pulse-size;
-        height: self.width;
-        border-radius: self.width / 2;
-        background: #e8553f;
-        x: (parent.width - self.width) / 2;
-        y: parent.height * 0.75 - self.height / 2;
-        opacity: 0.6 + 0.4 * sin(animation-tick() / 1.5s * 360deg);
-    }
+    callback knob-turned(int); // +1 = clockwise; -1 = anticlockwise
+    callback knob-pressed();
+    callback preset(int);        // 1–4
+    callback back();
 
-    Text {
-        text: root.time;
-        font-size: 16px;
-        x: 8px;
-        y: 8px;
+    knob-turned(delta) => {
+        root.knob-value += delta;
+        root.last-event = "knob " + (delta > 0 ? "→" : "←") + "  value " + root.knob-value;
+    }
+    knob-pressed() => { root.last-event = "knob press"; }
+    preset(n) => { root.last-event = "preset " + n; }
+    back() => { root.last-event = "back"; }
+
+    forward-focus: fs;
+
+    fs := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.LeftArrow)  { root.knob-turned(-1); return accept; }
+            if (event.text == Key.RightArrow) { root.knob-turned(1);  return accept; }
+            if (event.text == Key.Return)     { root.knob-pressed();  return accept; }
+            if (event.text == Key.Escape)  { root.back();          return accept; }
+            if (event.text == "1") { root.preset(1); return accept; }
+            if (event.text == "2") { root.preset(2); return accept; }
+            if (event.text == "3") { root.preset(3); return accept; }
+            if (event.text == "4") { root.preset(4); return accept; }
+            return reject;
+        }
+
+        Text {
+            text: "Hello My Thing";
+            font-size: 64px;
+            font-weight: 600;
+        }
+
+        Rectangle {
+            width: root.pulse-size;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: #e8553f;
+            x: (parent.width - self.width) / 2;
+            y: parent.height * 0.75 - self.height / 2;
+            opacity: 0.6 + 0.4 * sin(animation-tick() / 1.5s * 360deg);
+        }
+
+        Text {
+            text: root.time;
+            font-size: 16px;
+            x: 8px;
+            y: 8px;
+        }
+
+        Text {
+            text: "last: " + root.last-event;
+            font-size: 16px;
+            x: 8px;
+            y: parent.height - self.height - 8px;
+        }
     }
 }

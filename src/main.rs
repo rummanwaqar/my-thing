@@ -1,3 +1,6 @@
+#[cfg(feature = "device")]
+mod knob;
+
 slint::include_modules!();
 
 // FPS: run with SLINT_DEBUG_PERFORMANCE=refresh_lazy,overlay (or console).
@@ -16,6 +19,9 @@ fn main() -> Result<(), slint::PlatformError> {
             ui.set_time(now_string());
         }
     });
+
+    #[cfg(feature = "device")]
+    knob::spawn(ui.as_weak());
 
     ui.run()
 }
