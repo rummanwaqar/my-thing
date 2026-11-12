@@ -1,3 +1,5 @@
+mod backlight;
+mod idle;
 mod pomodoro;
 
 #[cfg(feature = "device")]
@@ -7,7 +9,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use pomodoro::{Phase, Pomodoro, View, PRESETS};
+use idle::Idle;
+use pomodoro::{PRESETS, Phase, Pomodoro, View};
 use slint::{ModelRc, SharedString, VecModel};
 
 slint::include_modules!();
@@ -22,6 +25,9 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // Rc<RefCell>: several callbacks share one mutable Pomodoro, all on the UI thread.
     let pomo = Rc::new(RefCell::new(Pomodoro::new()));
+    let idle = Rc::new(RefCell::new(Idle::new(Instant::now())));
+    // Idle starts bright; match it in case a previous run exited while dimmed.
+    backlight::set_dimmed(false);
 
     let labels: Vec<SharedString> = PRESETS
         .iter()
@@ -31,26 +37,49 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // Each callback holds a Weak handle: a strong one would be a reference cycle
     // (the window owns the callback, the callback would own the window).
+    // Every input first wakes the screen, then is handled as usual.
     ui.on_knob_turned({
-        let (ui, pomo) = (ui.as_weak(), pomo.clone());
-        move |delta| apply(&ui, &pomo, |p, now| p.turn(delta, now))
+        let (ui, pomo, idle) = (ui.as_weak(), pomo.clone(), idle.clone());
+        move |delta| {
+            wake(&idle);
+            apply(&ui, &pomo, |p, now| p.turn(delta, now))
+        }
     });
     ui.on_knob_pressed({
-        let (ui, pomo) = (ui.as_weak(), pomo.clone());
-        move || apply(&ui, &pomo, |p, now| p.press(now))
+        let (ui, pomo, idle) = (ui.as_weak(), pomo.clone(), idle.clone());
+        move || {
+            wake(&idle);
+            apply(&ui, &pomo, |p, now| p.press(now))
+        }
     });
     ui.on_back({
-        let (ui, pomo) = (ui.as_weak(), pomo.clone());
-        move || apply(&ui, &pomo, |p, _| p.back())
+        let (ui, pomo, idle) = (ui.as_weak(), pomo.clone(), idle.clone());
+        move || {
+            wake(&idle);
+            apply(&ui, &pomo, |p, _| p.back())
+        }
     });
-    ui.on_preset(|n| eprintln!("preset {n}: app switching comes later"));
+    ui.on_preset({
+        let idle = idle.clone();
+        move |n| {
+            wake(&idle);
+            eprintln!("preset {n}: app switching comes later")
+        }
+    });
 
     // 200 ms, not 1 s: a 1 s timer drifts against the deadline, so the shown
     // seconds would visibly stall or skip.
     let tick_timer = slint::Timer::default();
     tick_timer.start(slint::TimerMode::Repeated, Duration::from_millis(200), {
-        let (ui, pomo) = (ui.as_weak(), pomo.clone());
-        move || apply(&ui, &pomo, |p, now| p.tick(now))
+        let (ui, pomo, idle) = (ui.as_weak(), pomo.clone(), idle.clone());
+        move || {
+            apply(&ui, &pomo, |p, now| p.tick(now));
+            let now = Instant::now();
+            let on_ready = pomo.borrow().view(now).phase == Phase::Ready;
+            if let Some(dimmed) = idle.borrow_mut().tick(now, on_ready) {
+                backlight::set_dimmed(dimmed);
+            }
+        }
     });
 
     push(&ui, &pomo.borrow().view(Instant::now()));
@@ -59,6 +88,13 @@ fn main() -> Result<(), slint::PlatformError> {
     knob::spawn(ui.as_weak());
 
     ui.run()
+}
+
+/// Any input: restarts the idle countdown and brightens the screen if it was dimmed.
+fn wake(idle: &RefCell<Idle>) {
+    if idle.borrow_mut().input(Instant::now()) {
+        backlight::set_dimmed(false);
+    }
 }
 
 /// Runs one action on the Pomodoro, then redraws from a fresh view at the same `now`.

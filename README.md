@@ -25,6 +25,8 @@ Presets: 25/5, 50/10, 15/3 (focus/break minutes).
 
 On the desktop: ←/→ = knob turn, Enter = knob press, Esc = back. To reach an alarm quickly, turn down to 1:00 in Focus or Break.
 
+On Ready, the backlight dims after 20 s without input. Any input brightens it again and also does its normal action (e.g. a turn still changes the preset).
+
 ## Desktop
 
 ```sh
