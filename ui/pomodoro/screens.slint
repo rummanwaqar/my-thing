@@ -1,6 +1,7 @@
 import { Theme } from "theme.slint";
+import { Motion } from "motion.slint";
 import { PomoPhase, PomoView } from "types.slint";
-import { Hint, Pill, StatusPill, TimeText } from "parts.slint";
+import { Hint, Pill, StatusPill, SubText, TimeText } from "parts.slint";
 import { Pomo, PomoMood } from "pomo.slint";
 
 // Layout shared by every screen: Pomo on the left, a text column on the right,
@@ -10,6 +11,7 @@ component Screen inherits Rectangle {
     in property <PomoMood> mood;
     in property <float> ring-value: 1.0;
     in property <bool> paused;
+    in property <length> column-spacing: 12px;
 
     background: Theme.bg;
 
@@ -28,7 +30,7 @@ component Screen inherits Rectangle {
 
         VerticalLayout {
             alignment: center;
-            spacing: 12px;
+            spacing: root.column-spacing;
             @children
         }
     }
@@ -45,12 +47,7 @@ export component IdleScreen inherits Screen {
 
     TimeText { seconds: root.pomo.remaining-secs; }
 
-    Text {
-        text: "\{root.pomo.focus-min} min focus, \{root.pomo.break-min} min break";
-        font-size: Theme.sub-size;
-        font-weight: 600;
-        color: Theme.text-dim;
-    }
+    SubText { text: "\{root.pomo.focus-min} min focus, \{root.pomo.break-min} min break"; }
 
     HorizontalLayout {
         alignment: start;
@@ -85,7 +82,7 @@ export component FocusScreen inherits Screen {
     StatusPill {
         text: root.pomo.paused ? "PAUSED" : "FOCUS";
         fill: root.pomo.paused ? Theme.pill : Theme.tomato;
-        text-color: root.pomo.paused ? Theme.text : Theme.on-tomato;
+        text-color: root.pomo.paused ? Theme.text : Theme.ink;
     }
 
     TimeText {
@@ -96,60 +93,149 @@ export component FocusScreen inherits Screen {
     Hint { text: "Press knob: \{root.pomo.paused ? "resume" : "pause"} · Turn: ±1 min"; }
 }
 
-// Temporary: the Phase 1 debug screen for the states not designed yet.
-export component DebugScreen inherits Rectangle {
+// The alarm's moving background: a color strobe, 12 white rays spinning around
+// Pomo, and twinkling stars. Rays and stars are Paths with computed points, so
+// they animate on the software renderer too (it ignores transforms).
+component Celebration inherits Rectangle {
+    property <color> strobe: Theme.strobe[floor(Motion.cycle(1.8s, 0s) * 3)]; // hard step every 0.6 s
+    property <float> cx: 226;         // ray center: behind Pomo
+    property <float> cy: 240;
+    property <float> ray-length: 650; // from the center past the farthest screen corner
+
+    background: self.strobe;
+
+    // One full turn every 8 s. Each ray is a 15° wedge.
+    for i in 12: Path {
+        property <angle> a: i * 30deg + Motion.cycle(8s, 0s) * 360deg;
+        width: 100%;
+        height: 100%;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        fill: Colors.white;
+        opacity: 0.4;
+
+        MoveTo { x: root.cx; y: root.cy; }
+        LineTo {
+            x: root.cx + root.ray-length * cos(parent.a - 7.5deg);
+            y: root.cy + root.ray-length * sin(parent.a - 7.5deg);
+        }
+        LineTo {
+            x: root.cx + root.ray-length * cos(parent.a + 7.5deg);
+            y: root.cy + root.ray-length * sin(parent.a + 7.5deg);
+        }
+        Close { }
+    }
+
+    // Keeps the top-right corner calm, where the Car Thing's dial covers the screen:
+    // plain strobe color out to 150 px from the corner, fading out by 190 px.
+    Rectangle {
+        x: root.width - 190px;
+        y: -190px;
+        width: 380px;
+        height: 380px;
+        border-radius: self.width / 2;
+        // Gradient stops are relative to the box's corner (269 px), not its edge:
+        // 150 px = 56 %, 190 px = 71 %.
+        background: @radial-gradient(circle, root.strobe 0%, root.strobe 56%, root.strobe.with-alpha(0) 71%);
+    }
+
+    // Stars at the design's positions: grow, then shrink and fade, every 1.2 s, 0.3 s apart.
+    for star[i] in [
+        { x: 65px, y: 73px, size: 34px, color: Colors.white },
+        { x: 365px, y: 93px, size: 26px, color: Theme.ink },
+        { x: 85px, y: 387px, size: 30px, color: Theme.ink },
+        { x: 741px, y: 413px, size: 38px, color: Colors.white },
+    ]: Path {
+        property <float> k: Motion.wave(Motion.cycle(1.2s, i * 0.3s));
+        width: star.size * (0.3 + 0.9 * self.k);
+        height: self.width;
+        x: star.x - self.width / 2; // x, y are the star's center
+        y: star.y - self.height / 2;
+        viewbox-x: -12;
+        viewbox-y: -12;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: "M0 -11 L2.8 -2.8 L11 0 L2.8 2.8 L0 11 L-2.8 2.8 L-11 0 L-2.8 -2.8 Z";
+        fill: star.color;
+        opacity: self.k;
+    }
+}
+
+// Screen 3 · Time's up. Shown for both alarms: focus done and break over.
+export component AlarmScreen inherits Rectangle {
     in property <PomoView> pomo;
 
-    property <string> phase-label:
-        root.pomo.phase == PomoPhase.ready      ? "READY" :
-        root.pomo.phase == PomoPhase.focus      ? (root.pomo.paused ? "PAUSED" : "FOCUS") :
-        root.pomo.phase == PomoPhase.focus-done ? "FOCUS DONE!" :
-        root.pomo.phase == PomoPhase.on-break   ? (root.pomo.paused ? "PAUSED" : "BREAK") :
-                                             "BREAK OVER!";
+    property <bool> focus-done: root.pomo.phase == PomoPhase.focus-done;
 
-    property <string> hint:
-        root.pomo.phase == PomoPhase.ready      ? "Press knob: start · Turn: change preset" :
-        root.pomo.phase == PomoPhase.focus      ? "Press knob: " + (root.pomo.paused ? "resume" : "pause") + " · Turn: ±1 min" :
-        root.pomo.phase == PomoPhase.focus-done ? "Press knob: start break · Turn: 5 more minutes of focus" :
-        root.pomo.phase == PomoPhase.on-break   ? "Press knob: skip break · Turn: ±1 min" :
-                                             "Press knob: start focus · Turn: 5 more minutes of break";
+    Celebration { }
 
-    background: Theme.bg;
+    Screen {
+        background: transparent;
+        mood: PomoMood.excited;
+        column-spacing: 8px;
 
-    VerticalLayout {
-        padding: Theme.side-padding;
-        spacing: 16px;
-        alignment: center;
-
+        // Shakes ±4° three times a second (GPU renderer only).
         Text {
-            text: root.phase-label;
-            font-size: 24px;
-            font-weight: 600;
-            color: Theme.text-dim;
-        }
-
-        TimeText {
-            seconds: root.pomo.remaining-secs;
-            color: root.pomo.paused ? Theme.text-dim : Theme.text;
-        }
-
-        Rectangle {
-            height: 8px;
-            border-radius: 4px;
-            background: Theme.track;
-
-            Rectangle {
-                x: 0;
-                width: parent.width * root.pomo.progress;
-                border-radius: 4px;
-                background: Theme.tomato;
-            }
+            text: "DING!";
+            font-family: Theme.time-font;
+            font-weight: Theme.time-weight;
+            font-size: 96px;
+            color: Theme.ink;
+            transform-origin: { x: self.width * 0.2, y: self.height * 0.6 };
+            transform-rotation: -4deg + 8deg * Motion.wave(Motion.cycle(0.3s, 0s));
         }
 
         Text {
-            text: root.hint;
-            font-size: 16px;
-            color: Theme.hint;
+            text: root.focus-done ? "Focus done!" : "Break over!";
+            font-size: 34px;
+            font-weight: 900;
+            color: Theme.ink;
         }
+
+        Text {
+            text: root.focus-done
+                ? "Time for a \{root.pomo.break-min}-minute break"
+                : "Time for \{root.pomo.focus-min} minutes of focus";
+            font-size: 20px;
+            font-weight: 700;
+            color: Theme.ink;
+        }
+
+        Hint {
+            text: root.focus-done
+                ? "Press knob: start break · Turn: +5 min focus"
+                : "Press knob: start focus · Turn: +5 min break";
+            color: Theme.ink;
+        }
+    }
+}
+
+// Screen 4 · Break. A break can't be paused (the knob skips it), so no paused state.
+export component BreakScreen inherits Screen {
+    in property <PomoView> pomo;
+
+    background: Theme.break-ground;
+    mood: PomoMood.relaxed;
+    ring-value: 1 - root.pomo.progress; // the ring shows the time left
+
+    StatusPill {
+        text: "BREAK";
+        fill: Theme.ink;
+        text-color: Theme.text;
+    }
+
+    TimeText {
+        seconds: root.pomo.remaining-secs;
+        color: Theme.ink;
+    }
+
+    SubText {
+        text: "Stand up, stretch, refill your water";
+        color: Theme.break-text;
+    }
+
+    Hint {
+        text: "Press knob: skip break · Turn: ±1 min";
+        color: Theme.break-text;
     }
 }

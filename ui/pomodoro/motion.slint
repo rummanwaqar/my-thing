@@ -1,0 +1,18 @@
+// Helpers for the looping animations, all driven by animation-tick().
+export global Motion {
+    // Where we are in a repeating cycle: 0 → 1, then back to 0.
+    // `offset` shifts the cycle, so copies of an animation can run out of step.
+    public pure function cycle(period: duration, offset: duration) -> float {
+        return mod((animation-tick() + offset) / period, 1);
+    }
+
+    // A smooth loop over one cycle: 0 → 1 → 0 (like CSS ease-in-out, alternating).
+    public pure function wave(p: float) -> float {
+        return (1 - cos(p * 360deg)) / 2;
+    }
+
+    // Fast start, gentle stop: 0 → 1 (like CSS ease-out).
+    public pure function ease-out(p: float) -> float {
+        return 1 - (1 - p) * (1 - p);
+    }
+}

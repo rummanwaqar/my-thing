@@ -1,5 +1,5 @@
 import { PomoPhase, PomoView } from "types.slint";
-import { DebugScreen, FocusScreen, IdleScreen } from "screens.slint";
+import { AlarmScreen, BreakScreen, FocusScreen, IdleScreen } from "screens.slint";
 
 // The Pomodoro app: picks the screen for the current phase.
 export component PomodoroApp {
@@ -17,8 +17,12 @@ export component PomodoroApp {
         height: 100%;
         pomo: root.pomo;
     }
-    // Not designed yet.
-    if root.pomo.phase != PomoPhase.ready && root.pomo.phase != PomoPhase.focus: DebugScreen {
+    if root.pomo.phase == PomoPhase.focus-done || root.pomo.phase == PomoPhase.break-done: AlarmScreen {
+        width: 100%;
+        height: 100%;
+        pomo: root.pomo;
+    }
+    if root.pomo.phase == PomoPhase.on-break: BreakScreen {
         width: 100%;
         height: 100%;
         pomo: root.pomo;

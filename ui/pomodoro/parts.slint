@@ -47,9 +47,17 @@ export component StatusPill inherits HorizontalLayout {
     }
 }
 
+// The line under the time: "25 min focus, 5 min break", "Stand up, stretch, ...".
+export component SubText inherits Text {
+    font-size: Theme.sub-size;
+    font-weight: 600;
+    color: Theme.text-dim;
+}
+
 // The control hint at the bottom of a text column.
 export component Hint inherits VerticalLayout {
     in property <string> text;
+    in property <color> color: Theme.hint;
 
     padding-top: 18px; // the design's extra gap above the hint
 
@@ -57,7 +65,7 @@ export component Hint inherits VerticalLayout {
         text: root.text;
         font-size: Theme.hint-size;
         font-weight: 700;
-        color: Theme.hint;
+        color: root.color;
     }
 }
 

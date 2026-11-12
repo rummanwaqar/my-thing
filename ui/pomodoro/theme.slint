@@ -12,8 +12,19 @@ export global Theme {
     // Pomo the tomato
     out property <color> tomato: #ff5a4e;
     out property <color> tomato-dark: #e0483d;
-    out property <color> on-tomato: #111111;   // text on a tomato-red fill
     out property <color> spark: #fccc0a;
+
+    // Dark text and outlines on bright fills (tomato pill, alarm, break).
+    out property <color> ink: #111111;
+
+    // Alarm screen: the background strobes through these.
+    out property <[color]> strobe: [#fccc0a, #ff6319, #6cbe45];
+
+    // Break screen: light green, with dark text.
+    out property <color> break-ground: #eaf6e2;
+    out property <color> break-track: #d3e8c6;
+    out property <color> break-ring: #4e9a2e;
+    out property <color> break-text: #3a4d30;
 
     // Type: Inter for text, rounded Fredoka for the big countdown (suits Pomo better).
     out property <string> time-font: "Fredoka";
@@ -24,7 +35,6 @@ export global Theme {
     out property <length> hint-size: 14px;
 
     // Layout shared by every screen: 800×480, character area on the left, text on the right.
-    out property <length> side-padding: 56px;
     out property <length> character-size: 340px;
     out property <length> column-gap: 48px;
 }
