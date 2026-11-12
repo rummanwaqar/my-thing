@@ -1,0 +1,33 @@
+header:
+  version: 18
+  includes:
+    - repo: yocto-superbird
+      file: kas/superbird.yml
+
+distro: my-thing-distro
+
+target:
+  - my-thing-image
+
+repos:
+  # The BSP, fetched into sources/ and pinned. Bump `commit` to move to a newer BSP.
+  yocto-superbird:
+    url: https://github.com/JoeyEamigh/yocto-superbird.git
+    branch: main
+    commit: a3b941e17ad3fc06ed5b297f2400468d34ec6dad
+    path: sources/yocto-superbird
+    layers:
+      meta-superbird:
+
+  # This repo (no url = the repo containing this file).
+  my-thing:
+    layers:
+      yocto/meta-my-thing:
+
+local_conf_header:
+  my-thing-src: |
+    # Build my-thing from this repo's working tree (MY_THING_SRC is set in layer.conf).
+    INHERIT += "externalsrc"
+    EXTERNALSRC:pn-my-thing = "${MY_THING_SRC}"
+    EXTERNALSRC_BUILD:pn-my-thing = "${WORKDIR}/build"
+    EXTERNALSRC_SYMLINKS = ""

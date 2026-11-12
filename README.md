@@ -24,7 +24,7 @@ cargo run
 
 ## Device
 
-The device runs our own Yocto image (`my-thing-image`, layer `../yocto-superbird/meta-my-thing`, see `../plans/2-permanent-deploy.md`). my-thing starts at boot as the `my-thing` systemd service on top of Weston, and restarts if it crashes. The device is `my-thing.local` (or `DEVICE=10.42.1.74` if mDNS doesn't resolve).
+The device runs our own Yocto image (`my-thing-image`, layer `yocto/meta-my-thing`, see `../plans/2-permanent-deploy.md`). my-thing starts at boot as the `my-thing` systemd service on top of Weston, and restarts if it crashes. The device is `my-thing.local` (or `DEVICE=10.42.1.74` if mDNS doesn't resolve).
 
 One-time setup: install the Yocto SDK (see `../plans/0-hello-world.md`, Phase A) and link it here:
 

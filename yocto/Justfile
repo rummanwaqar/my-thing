@@ -1,0 +1,34 @@
+# my-thing image: build, flash and talk to the device.
+# just runs recipes from this directory, which kas uses as its work dir (build/, sources/).
+
+flashthing := env_var_or_default('FLASHTHING_CLI', 'flashthing-cli')
+# Device helpers from the pinned BSP checkout (kas fetches it into sources/ on the first build).
+scripts := justfile_directory() / "sources/yocto-superbird/scripts"
+export SUPERBIRD_HOST := env_var_or_default('SUPERBIRD_HOST', 'my-thing.local')
+
+# --repo-rw: externalsrc runs `git add` on this repo (into a temp index) to detect source
+# changes, and kas-container mounts the repo read-only for `build` by default.
+
+# Build the image
+build:
+  kas-container --repo-rw build kas/my-thing.yml
+
+# Bitbake shell inside the container
+shell:
+  kas-container shell kas/my-thing.yml
+
+# Flash a full image (hold buttons 1+4 while plugging in USB). Resets bandaid to the image's binary.
+flash image="my-thing-image":
+  {{flashthing}} build/tmp/deploy/images/superbird/{{image}}-superbird-flashthing.zip
+
+# Exit mask-rom USB mode and cold-boot the flashed image
+boot-kernel:
+  {{scripts}}/superbird-boot-kernel.sh
+
+# SSH into the device (SUPERBIRD_HOST overrides my-thing.local)
+ssh *args:
+  {{scripts}}/superbird-ssh {{quote(args)}}
+
+# Build the SDK from this image, so its sysroot matches the device
+sdk:
+  kas-container shell kas/my-thing.yml:kas/sdk.yml -c "bitbake my-thing-image -c populate_sdk"

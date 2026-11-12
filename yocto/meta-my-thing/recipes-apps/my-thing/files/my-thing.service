@@ -1,0 +1,21 @@
+[Unit]
+Description=my-thing
+Requires=opt-overlay@my-thing.service
+After=opt-overlay@my-thing.service superbird-weston.service
+BindsTo=superbird-weston.service
+PartOf=superbird-weston.service
+
+[Service]
+Type=simple
+Environment=XDG_RUNTIME_DIR=/run/weston
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=SLINT_FULLSCREEN=1
+StateDirectory=my-thing
+WorkingDirectory=/var/lib/my-thing
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 600); do [ -S /run/weston/wayland-1 ] && exit 0; sleep 0.05; done; exit 1'
+ExecStart=/opt/my-thing/bin/my-thing.current
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=superbird-weston.service

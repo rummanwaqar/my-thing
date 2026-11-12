@@ -1,2 +1,8 @@
 /target
 /sdk
+
+# Yocto work dir (kas-container run from yocto/)
+/yocto/build/
+/yocto/sources/
+/yocto/ccache/
+/yocto/.kas/
