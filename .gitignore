@@ -6,3 +6,5 @@
 /yocto/sources/
 /yocto/ccache/
 /yocto/.kas/
+
+.plans/
