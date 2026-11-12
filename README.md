@@ -31,7 +31,7 @@ rustup target add aarch64-unknown-linux-gnu
 ln -s ~/.local/superbird-sdk sdk
 ```
 
-Build, copy to the device, and run (stops the kiosk first; Ctrl-C to quit):
+Build, copy to the device, and run as a fullscreen client of the image's Weston (stops Chromium first; Ctrl-C to quit):
 
 ```sh
 cargo device-run
@@ -40,5 +40,5 @@ cargo device-run
 - `cargo device-build` only builds: `target/aarch64-unknown-linux-gnu/release/my-thing`
 - `DEVICE=10.42.1.74 cargo device-run` if mDNS doesn't resolve
 - `SLINT_DEBUG_PERFORMANCE=refresh_lazy,overlay cargo device-run` shows FPS
-- Uses the software renderer by default (femtovg draws rotated text as outlines, which looks bolder); `SLINT_BACKEND=linuxkms-femtovg cargo device-run` uses the GPU renderer
+- Weston rotates the portrait panel, so Slint renders unrotated on the GPU (femtovg) with crisp text. Rendering straight to the display with `SLINT_KMS_ROTATION` made femtovg draw text as outlines (bold), and the software renderer was too slow (~12 fps on some screens).
 - Restore the kiosk: `ssh root@superbird-kiosk.local reboot`

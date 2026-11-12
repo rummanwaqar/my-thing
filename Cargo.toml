@@ -14,4 +14,7 @@ slint-build = "1.18.1"
 [features]
 default = ["desktop"]
 desktop = ["slint/backend-winit", "slint/renderer-femtovg"]
-device  = ["slint/backend-linuxkms-libinput", "slint/renderer-femtovg", "slint/renderer-software", "dep:evdev"]
+# On the device the app is a Wayland client of the image's Weston, which rotates the
+# portrait panel. Slint then renders unrotated, so femtovg (GPU) keeps crisp text;
+# with linuxkms + SLINT_KMS_ROTATION it draws all text as outlines, which looks bold.
+device  = ["slint/backend-winit-wayland", "slint/renderer-femtovg", "dep:evdev"]
