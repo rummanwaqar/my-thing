@@ -32,23 +32,59 @@ export component Pill inherits Rectangle {
     }
 }
 
+// A status pill (READY / FOCUS / ...) at its natural width, left-aligned in a column.
+export component StatusPill inherits HorizontalLayout {
+    in property <string> text;
+    in property <color> fill: Theme.pill;
+    in property <color> text-color: Theme.text;
+
+    alignment: start;
+
+    Pill {
+        text: root.text;
+        fill: root.fill;
+        text-color: root.text-color;
+    }
+}
+
+// The control hint at the bottom of a text column.
+export component Hint inherits VerticalLayout {
+    in property <string> text;
+
+    padding-top: 18px; // the design's extra gap above the hint
+
+    Text {
+        text: root.text;
+        font-size: Theme.hint-size;
+        font-weight: 700;
+        color: Theme.hint;
+    }
+}
+
 // "m:ss" with every character in a fixed-width cell. Slint can't turn on tabular
 // figures, so without this the time would shift sideways as digits change.
+// Always as wide as "mm:ss", so the layout doesn't jump at 10:00 → 9:59.
 export component TimeText {
     in property <int> seconds;
     in property <color> color: Theme.text;
     in property <length> font-size: Theme.time-size;
 
+    property <length> digit-width: root.font-size * 0.6;
+    property <length> colon-width: root.font-size * 0.28;
     property <int> minutes: floor(root.seconds / 60);
     property <int> secs: mod(root.seconds, 60);
     property <[string]> chars: root.minutes >= 10
         ? ["\{floor(root.minutes / 10)}", "\{mod(root.minutes, 10)}", ":", "\{floor(root.secs / 10)}", "\{mod(root.secs, 10)}"]
         : ["\{root.minutes}", ":", "\{floor(root.secs / 10)}", "\{mod(root.secs, 10)}"];
 
+    min-width: 4 * root.digit-width + root.colon-width;
+
     HorizontalLayout {
+        alignment: start;
+
         for char in root.chars: Text {
             text: char;
-            width: root.font-size * (char == ":" ? 0.28 : 0.6);
+            width: char == ":" ? root.colon-width : root.digit-width;
             height: root.font-size; // like CSS line-height: 1
             vertical-alignment: center;
             horizontal-alignment: center;
@@ -60,23 +96,52 @@ export component TimeText {
     }
 }
 
-// The Idle screen's dashed ring. Slint paths have no dashes, so each dash is a
-// small rounded rectangle placed around the circle and turned to follow it.
-export component DotRing {
-    in property <color> color: Theme.track;
+// A ring that fills clockwise from the top. `value` is the filled fraction, 0.0 → 1.0.
+// Drawn with Path, so it renders on both the GPU and the software renderer.
+export component ProgressRing {
+    in property <float> value;
+    in property <color> track: Theme.track;
+    in property <color> fill: Theme.tomato;
     in property <length> radius: 155px;
-    in property <int> count: 44;          // circumference 974 px / 22 px per dash in the design
-    in property <length> dash-length: 18px;
     in property <length> thickness: 14px;
 
-    for i in root.count: Rectangle {
-        property <angle> a: 360deg * i / root.count;
-        width: root.dash-length;
-        height: root.thickness;
-        border-radius: self.height / 2;
-        background: root.color;
-        x: root.width / 2 + root.radius * cos(self.a) - self.width / 2;
-        y: root.height / 2 + root.radius * sin(self.a) - self.height / 2;
-        transform-rotation: self.a + 90deg;
+    // Path coordinates are plain numbers; the viewbox below makes 1 unit = 1px.
+    property <float> cx: root.width / 2px;
+    property <float> cy: root.height / 2px;
+    property <float> r: root.radius / 1px;
+    // A full 360° arc ends where it starts and draws nothing, so stop just short.
+    property <angle> end: 360deg * min(root.value, 0.9999);
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        stroke: root.track;
+        stroke-width: root.thickness;
+
+        MoveTo { x: root.cx; y: root.cy - root.r; }
+        ArcTo { x: root.cx; y: root.cy + root.r; radius-x: root.r; radius-y: root.r; sweep: true; }
+        ArcTo { x: root.cx; y: root.cy - root.r; radius-x: root.r; radius-y: root.r; sweep: true; }
+    }
+
+    if root.value > 0: Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        stroke: root.fill;
+        stroke-width: root.thickness;
+        stroke-line-cap: round;
+
+        MoveTo { x: root.cx; y: root.cy - root.r; }
+        ArcTo {
+            x: root.cx + root.r * sin(root.end);
+            y: root.cy - root.r * cos(root.end);
+            radius-x: root.r;
+            radius-y: root.r;
+            large-arc: root.value > 0.5;
+            sweep: true;
+        }
     }
 }

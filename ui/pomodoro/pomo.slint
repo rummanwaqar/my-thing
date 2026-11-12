@@ -1,12 +1,30 @@
 import { Theme } from "theme.slint";
-import { DotRing } from "parts.slint";
+import { ProgressRing } from "parts.slint";
 
 export enum PomoMood { sleepy, focused, relaxed, excited }
 
+// Squashes its children slightly in a loop, anchored near their bottom, like breathing.
+component Breathing inherits Rectangle {
+    in property <duration> period;
+    in property <float> stretch;       // extra width at the peak (0.03 = 3 %)
+    in property <float> squash;        // lost height at the peak
+    in property <float> anchor-y: 0.9; // fraction of the height that stays put
+
+    property <float> breath: (1 - cos(animation-tick() / root.period * 360deg)) / 2; // 0 → 1 → 0
+
+    transform-origin: { x: self.width / 2, y: self.height * root.anchor-y };
+    transform-scale-x: 1 + root.stretch * self.breath;
+    transform-scale-y: 1 - root.squash * self.breath;
+
+    @children
+}
+
 // Pomo the tomato in its 340×340 character area, with the ring behind it.
-// Animations are driven by animation-tick() (milliseconds since start).
+// Coordinates are the design's. Animations are driven by animation-tick().
 export component Pomo {
     in property <PomoMood> mood;
+    in property <float> ring-value: 1.0; // filled fraction of the progress ring (focused)
+    in property <bool> paused;           // focused: screen glow off, no typing sparks
 
     width: Theme.character-size;
     height: Theme.character-size;
@@ -14,33 +32,115 @@ export component Pomo {
     property <float> t: animation-tick() / 1ms;
 
     if root.mood == PomoMood.sleepy: Rectangle {
-        DotRing { }
+        // The design's dashed ring, as a static image tinted from the theme.
+        Image {
+            width: 100%;
+            height: 100%;
+            source: @image-url("images/ring-dashed.svg");
+            colorize: Theme.track;
+        }
 
         // Three z's floating up and fading, 3 s each, started 1 s apart.
         for letter[i] in ["z", "z", "Z"]: Text {
             property <float> p: mod(root.t + i * 1000, 3000) / 3000; // 0 → 1
             property <float> eased: 1 - (1 - self.p) * (1 - self.p);  // ease-out
             text: letter;
-            font-size: 26px;
+            font-size: 26px * (0.7 + 0.45 * self.eased); // grows from 70 % to 115 %
             font-weight: 800;
             color: Theme.text-dim;
             x: 228px + 26px * self.eased;
             y: 44px - 60px * self.eased;
-            transform-scale: 0.7 + 0.45 * self.eased;
             opacity: self.p < 0.25 ? self.p / 0.25 : 1 - (self.p - 0.25) / 0.75;
         }
 
-        // Breathing: a slight squash every 4 s, anchored near the bottom.
-        Image {
-            property <float> breath: (1 - cos(root.t / 4000 * 360deg)) / 2; // 0 → 1 → 0
-            source: @image-url("images/pomo-sleepy.svg");
+        Breathing {
             x: 50px;
             y: 50px;
             width: 240px;
             height: 240px;
-            transform-origin: { x: self.width / 2, y: self.height * 0.9 };
-            transform-scale-x: 1 + 0.025 * self.breath;
-            transform-scale-y: 1 - 0.015 * self.breath;
+            period: 4s;
+            stretch: 0.025;
+            squash: 0.015;
+
+            Image {
+                width: 100%;
+                height: 100%;
+                source: @image-url("images/pomo-sleepy.svg");
+            }
+        }
+    }
+
+    if root.mood == PomoMood.focused: Rectangle {
+        ProgressRing {
+            width: 100%;
+            height: 100%;
+            value: root.ring-value;
+        }
+
+        // Pomo peeking over the laptop: the design's 200×200 drawing at 1.1×, from (60, 20).
+        Breathing {
+            x: 60px;
+            y: 20px;
+            width: 220px;
+            height: 220px;
+            period: 3s;
+            stretch: 0.03;
+            squash: 0.02;
+            anchor-y: 0.84; // bottom of the tomato, not of the drawing
+
+            Image {
+                width: 100%;
+                height: 100%;
+                source: @image-url("images/pomo-focused-body.svg");
+            }
+
+            // Screen light on the face, pulsing every 2.2 s.
+            Image {
+                visible: !root.paused;
+                width: 100%;
+                height: 100%;
+                source: @image-url("images/pomo-focused-glow.svg");
+                opacity: 0.14 + 0.12 * (1 - cos(root.t / 2200 * 360deg)) / 2;
+            }
+
+            Image {
+                width: 100%;
+                height: 100%;
+                source: @image-url("images/pomo-focused-face.svg");
+            }
+
+            // Blinks once every 4.5 s: open for 90 %, shut at 94 %, open again by 100 %.
+            Image {
+                property <float> p: mod(root.t, 4500) / 4500;
+                width: 100%;
+                height: 100%;
+                source: @image-url("images/pomo-focused-eyes.svg");
+                transform-origin: { x: self.width / 2, y: self.height * 0.6 }; // eye level
+                transform-scale-y: self.p < 0.9 ? 1
+                    : self.p < 0.94 ? 1 - 0.9 * (self.p - 0.9) / 0.04
+                    : 0.1 + 0.9 * (self.p - 0.94) / 0.06;
+            }
+        }
+
+        // Typing sparks either side of the laptop, flashing alternately every 0.5 s.
+        for commands[i] in ["M78 176 L68 168 M74 186 L62 186", "M262 176 L272 168 M266 186 L278 186"]: Path {
+            property <float> p: mod(root.t + i * 250, 500) / 500;
+            visible: !root.paused;
+            width: 100%;
+            height: 100%;
+            viewbox-width: 340;
+            viewbox-height: 340;
+            commands: commands;
+            stroke: Theme.spark;
+            stroke-width: 4px;
+            stroke-line-cap: round;
+            opacity: self.p < 0.4 ? self.p / 0.4 : self.p < 0.6 ? 1 : (1 - self.p) / 0.4;
+        }
+
+        Image {
+            width: 100%;
+            height: 100%;
+            source: @image-url("images/laptop.svg");
         }
     }
 }
