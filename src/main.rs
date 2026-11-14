@@ -45,13 +45,8 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // Google login and calendar fetching run on their own thread; the tick timer
     // drains its messages. `--logout` forgets the saved login first.
-    // `--demo` skips Google and shows sample events instead.
     let logout = std::env::args().any(|a| a == "--logout");
-    let (google_cmds, google_msgs) = if std::env::args().any(|a| a == "--demo") {
-        demo_calendar()
-    } else {
-        google::spawn(logout)
-    };
+    let (google_cmds, google_msgs) = google::spawn(logout);
     let cal = Rc::new(RefCell::new(CalendarUi::default()));
 
     let labels: Vec<SharedString> = PRESETS
@@ -227,16 +222,6 @@ fn push(ui: &MainWindow, v: &View) {
 fn date_and_clock() -> (String, String) {
     let now = chrono::Local::now();
     (now.format("%A, %b %-d").to_string(), now.format("%H:%M").to_string())
-}
-
-/// For `--demo`: a fake Google thread that is logged in and has sample events.
-fn demo_calendar() -> (std::sync::mpsc::Sender<google::Cmd>, std::sync::mpsc::Receiver<Msg>) {
-    let (cmd_tx, _cmd_rx) = std::sync::mpsc::channel();
-    let (msg_tx, msg_rx) = std::sync::mpsc::channel();
-    let now = chrono::Local::now();
-    let _ = msg_tx.send(Msg::Status(Status::LoggedIn { email: "demo@example.com".into() }));
-    let _ = msg_tx.send(Msg::Synced { events: calendar::sample_events(now), at: now });
-    (cmd_tx, msg_rx)
 }
 
 /// How long the Calendar stays on an event the knob moved to, without input.

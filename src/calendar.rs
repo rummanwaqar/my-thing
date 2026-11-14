@@ -3,7 +3,7 @@
 //! events come from (`google::calendar` produces them). No UI code; every
 //! method that depends on time takes `now`, so tests are deterministic.
 
-use chrono::{DateTime, Days, Local};
+use chrono::{DateTime, Local};
 
 /// What kind of event it is, shown as a lettered badge (like a train line).
 /// Decided by the data source (`google::calendar::kind`).
@@ -318,44 +318,6 @@ pub fn reminder_view(e: &Event, now: DateTime<Local>) -> EventView {
         },
         ..v
     }
-}
-
-/// Made-up events around `now`, for `--demo`: the Calendar page can be worked
-/// on without a Google login.
-pub fn sample_events(now: DateTime<Local>) -> Vec<Event> {
-    use chrono::{Duration, NaiveTime, TimeZone};
-    let day = |offset: u64| now.date_naive() + Days::new(offset);
-    let at = |offset: u64, h: u32, m: u32| {
-        Local
-            .from_local_datetime(&day(offset).and_time(NaiveTime::from_hms_opt(h, m, 0).unwrap()))
-            .earliest()
-            .unwrap_or(now)
-    };
-    let ev = |kind: Kind, title: &str, start: DateTime<Local>, minutes: i64, location: &str| Event {
-        calendar: "Demo".into(),
-        kind,
-        title: title.into(),
-        location: (!location.is_empty()).then(|| location.into()),
-        start,
-        end: start + Duration::minutes(minutes),
-        all_day: false,
-    };
-    let mins = Duration::minutes;
-    let mut v = vec![
-        ev(Kind::Other, "Standup", now - mins(90), 15, "Google Meet"),
-        ev(Kind::Booked, "Team coffee", now - mins(20), 30, ""),
-        // Within 5 minutes, so --demo opens on the reminder takeover (Back dismisses it).
-        ev(Kind::Pending, "Launch readiness review", now + mins(3), 45, "Studio 4A · Video call"),
-        ev(Kind::Booked, "1:1 sync", now + mins(48), 20, ""),
-        ev(Kind::Focus, "Deep work", now + mins(68), 60, ""),
-        ev(Kind::Other, "Lunch", now + mins(128), 60, "Cafe Nero"),
-        ev(Kind::Pending, "Design sync", now + mins(220), 30, "Room 2.1"),
-        ev(Kind::Booked, "Gym", now + mins(430), 60, ""),
-        ev(Kind::Other, "Planning", at(1, 10, 0), 90, "Room 2.1"),
-    ];
-    v.push(Event { all_day: true, start: at(0, 0, 0), end: at(1, 0, 0), ..ev(Kind::Other, "Offsite", now, 0, "Lisbon") });
-    sort(&mut v);
-    v
 }
 
 #[cfg(test)]

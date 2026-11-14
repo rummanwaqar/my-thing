@@ -54,7 +54,6 @@ After the start it counts up ("2 MIN AGO"), and if it isn't dismissed it dismiss
 
 - Fetches every calendar ticked in Google Calendar, from the start of today to 14 days ahead. Google expands recurring events. Declined events, cancelled events and Workspace "working location" markers are hidden.
 - Re-fetches every 5 minutes. After an error it retries sooner (30 s, doubling) and keeps showing the last events. The terminal lists the next few events whenever they change.
-- `cargo run -- --demo` skips Google and shows made-up events, for working on the layout without a login. One starts within 5 minutes, so it opens on the reminder: press Back (Esc) to dismiss it.
 
 ### Google login
 

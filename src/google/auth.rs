@@ -55,15 +55,6 @@ pub enum AuthError {
     Other(String),
 }
 
-impl std::fmt::Display for AuthError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            AuthError::Revoked => write!(f, "login expired or was revoked"),
-            AuthError::Other(e) => write!(f, "{e}"),
-        }
-    }
-}
-
 // Typestate: auth URL, device URL, introspection URL, revocation URL, token URL.
 type Client = BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointSet, EndpointSet>;
 
