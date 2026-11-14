@@ -74,19 +74,21 @@ Then `cargo run`. The first time, the terminal prints a login link: open it in a
 
 #### On the device
 
-The device has no browser, so log in on the desktop and copy both files over. A refresh token isn't tied to the machine it was made on, and with an Internal app it doesn't expire. The service runs with `HOME=/var/lib/my-thing` (on the writable settings partition), so the files go under that directory:
+The device has no browser, so log in on the desktop, then copy the login over. A refresh token isn't tied to the machine it was made on, and with an Internal app it doesn't expire.
 
 ```sh
 cargo run                      # once, on the desktop: log in until it says "Logged in as …", then quit
-ssh root@my-thing.local 'mkdir -p /var/lib/my-thing/.config/my-thing /var/lib/my-thing/.local/state/my-thing'
-scp ~/.config/my-thing/google-client.json root@my-thing.local:/var/lib/my-thing/.config/my-thing/
-scp ~/.local/state/my-thing/google-login.json root@my-thing.local:/var/lib/my-thing/.local/state/my-thing/
-ssh root@my-thing.local 'chmod 600 /var/lib/my-thing/.local/state/my-thing/google-login.json && systemctl restart my-thing'
+scripts/device-login.sh        # copy it to the device (DEVICE=… if not my-thing.local)
 ```
 
+The script copies `google-client.json` and `google-login.json` to the device (owner-only), restarts the app, and shows its log until "Logged in as …". The device needs internet first (see [Internet and time](#internet-and-time)).
+
+The service runs with `HOME=/var/lib/my-thing`, so the files live in `/var/lib/my-thing/.config/my-thing/` and `/var/lib/my-thing/.local/state/my-thing/`. That's on `/var`, the persistent data partition: they survive reboots and `scripts/device-install.sh`, and only a factory reset wipes them.
+
 - The device rewrites `google-login.json` whenever it refreshes the access token, which is why it has to be on a writable partition.
+- Unplugging the Car Thing cuts its power, and Linux keeps new file data in memory for up to 30 s. The script and the app sync their writes to disk, so the login survives. For a reboot, use `ssh root@my-thing.local systemctl reboot`.
 - Desktop and device each use their own copy of the same login. Logging out on one (`--logout` revokes it with Google) logs out both; copy a fresh login after logging in again.
-- If the device shows "Google login expired or was revoked", it's waiting for a login it can't do: log in on the desktop and copy `google-login.json` again.
+- If the device shows "Google login expired or was revoked", it's waiting for a login it can't do: log in on the desktop and run `scripts/device-login.sh` again.
 - The device needs a roughly correct clock: HTTPS certificates and token expiry depend on it.
 
 ## Pomodoro
@@ -146,6 +148,44 @@ just flash                     # hold buttons 1+4 while plugging in USB
 just boot-kernel               # if it stays in mask-rom
 just ssh                       # root@my-thing.local
 ```
+
+### Internet and time
+
+The device has no network of its own. It gets the internet through the computer it's plugged into, over the USB network: the device is `10.42.1.74`, the computer is `10.42.1.73`. It needs it for Google Calendar and for the clock (there's no battery-backed clock).
+
+**On the computer (once):** share its internet with the device. This needs NetworkManager and ufw, and asks for sudo:
+
+```sh
+scripts/host-share-internet.sh          # with the device plugged in
+scripts/host-share-internet.sh --undo   # remove it again
+```
+
+It:
+- adds a NetworkManager profile `my-thing-usb` that gives the computer the fixed address `10.42.1.73/29` on the device's USB link. The profile is matched by the link's MAC, so any USB port works, and it's never used as the computer's own default route.
+- turns on IPv4 forwarding in `/etc/ufw/sysctl.conf`.
+- adds a NAT (masquerade) block for `10.42.1.72/29` to `/etc/ufw/before.rules`, keeping a backup.
+- adds `ufw route allow from 10.42.1.72/29`, then reloads ufw.
+
+It's safe to run again. With the device unplugged, give the values yourself: `MY_THING_MAC=02:11:44:… MY_THING_NET=10.42.1.72/29 scripts/host-share-internet.sh`.
+
+**On the device (in the image):**
+- At boot, `my-thing-uplink` points the default route at the computer (`.73`) and uses public DNS (1.1.1.1, 9.9.9.9).
+- `systemd-timesyncd` syncs the clock over NTP (`time.cloudflare.com`, `pool.ntp.org`).
+- The timezone is set on every boot from `MY_THING_TIMEZONE` in `yocto/meta-my-thing/conf/distro/my-thing-distro.conf` (now `America/Vancouver`). Change it there and rebuild.
+- Without the computer side, the device just has no internet, as before.
+
+**Check** (after flashing an image with these):
+
+```sh
+ssh root@my-thing.local 'ip route; resolvectl query oauth2.googleapis.com; ping -c 1 1.1.1.1; timedatectl'
+```
+
+Expect:
+- `default via 10.42.1.73`
+- an address for the Google host and a ping reply
+- `System clock synchronized: yes`, `NTP service: active`, and `Time zone: America/Vancouver`
+
+If the device can reach `10.42.1.73` but nothing beyond it, check the computer's firewall: `sudo ufw status verbose` should list the route rule, and Docker's forwarding rules can also get in the way.
 
 Notes:
 - `cargo device-build` only builds: `target/aarch64-unknown-linux-gnu/release/my-thing`

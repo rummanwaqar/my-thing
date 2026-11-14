@@ -1,0 +1,16 @@
+[Unit]
+Description=Default route and DNS through the USB host
+DefaultDependencies=no
+# After the BSP has written the USB network file, before networkd reads it.
+After=superbird-usb-gadget.service
+Before=systemd-networkd.service network-pre.target
+Wants=network-pre.target
+ConditionPathExists=/run/systemd/network/11-usb-ncm.network
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/my-thing-uplink
+
+[Install]
+WantedBy=multi-user.target

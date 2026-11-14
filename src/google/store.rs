@@ -2,7 +2,8 @@
 //!
 //! One JSON file, readable only by its owner (it holds a refresh token, which
 //! grants read access to the calendar until revoked). Written to a temporary
-//! file and renamed, so a crash mid-write never leaves a half-written login.
+//! file, synced, and renamed (and the directory synced), so a crash or power
+//! cut mid-write never leaves a half-written or missing login.
 
 use std::fs;
 use std::io::{self, Write};
@@ -56,7 +57,13 @@ pub fn save(path: &Path, login: &StoredLogin) -> io::Result<()> {
         .open(&tmp)?;
     f.write_all(serde_json::to_string_pretty(login)?.as_bytes())?;
     f.sync_all()?;
-    fs::rename(&tmp, path)
+    fs::rename(&tmp, path)?;
+    // The rename lives in the directory: sync that too, or a power cut right after
+    // (unplugging the Car Thing) can leave the old file, or none on a first save.
+    if let Some(dir) = path.parent() {
+        fs::File::open(dir)?.sync_all()?;
+    }
+    Ok(())
 }
 
 pub fn delete(path: &Path) {

@@ -10,7 +10,12 @@ Type=simple
 Environment=XDG_RUNTIME_DIR=/run/weston
 Environment=WAYLAND_DISPLAY=wayland-1
 Environment=SLINT_FULLSCREEN=1
+# Google client config and login live under $HOME, on the persistent data
+# partition (/var): .config/my-thing/google-client.json and
+# .local/state/my-thing/google-login.json. scripts/device-login.sh copies them in.
+Environment=HOME=/var/lib/my-thing
 StateDirectory=my-thing
+StateDirectoryMode=0700
 WorkingDirectory=/var/lib/my-thing
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 600); do [ -S /run/weston/wayland-1 ] && exit 0; sleep 0.05; done; exit 1'
 ExecStart=/opt/my-thing/bin/my-thing.current

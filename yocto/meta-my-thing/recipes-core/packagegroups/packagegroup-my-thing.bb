@@ -11,6 +11,7 @@ RDEPENDS:${PN} = " \
     packagegroup-superbird-runtime \
     \
     my-thing \
+    my-thing-uplink \
     \
     mesa \
     weston \
