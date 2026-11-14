@@ -17,17 +17,30 @@ The knob, Enter and Back only reach the page that's showing. Hidden apps keep ru
 
 ## Calendar
 
-Shows your Google Calendar as an agenda: today's date and sync status at the top, then the events grouped under day headers (Today, Tomorrow, Mon 16 Nov, …). The current event is highlighted, finished ones are dimmed, and each has its calendar's color. Temporary look; real styling comes later.
+Shows your Google Calendar as a station departure board (design "A · Departures list"): a black header with the date, the badge legend, the number of all-day events and the clock. Below it, the event in progress as a yellow NOW row (time range, minutes left, and a bar showing how much is over), then the next departures, each with its start time, location and a big countdown ("23 MIN", "1:08 HR").
+
+Each event gets a lettered badge, like a train line. First match wins:
+
+| Badge | Rule |
+|---|---|
+| **F** (purple) | focus time (Google's "Focus time" event type) |
+| **T** (orange) | you booked it: you're the organizer, including events you made yourself |
+| **W** (blue) | an invitation you haven't accepted (needs action or "maybe"). Declined ones are hidden |
+| **P** (green) | everything else (accepted invitations, events on shared calendars) |
+
+The header shows a legend of the badges present.
+
+Office rooms at 285W 5th are shortened to just the room: `285W 5th-4FL-Room 306 (6)` → `Room 306`, `285W 5th-3FL-Main Conference Room (311) (12)` → `Main Conference Room (311)`. Everything up to the floor marker (`4FL-`, `3FL-`, …) goes, and so does the occupancy in the last brackets. Other locations are shown as they are. Sync problems show in yellow in the header ("Sync failed (last synced 12:03): …"). Before the first sync, the page shows the login state instead.
 
 | Input | Calendar page |
 |---|---|
-| Knob turn | scroll one row (finished events are above) |
-| Knob press | sync now |
-| Back (Esc) | jump back to now |
+| Knob turn | scroll the departures under the NOW row |
+| Knob press | sync now (it also syncs every 5 minutes by itself) |
+| Back (Esc) | back to the next event |
 
-The list follows "now" until you scroll, and goes back to it on Back, when you switch to the page, or when the screen dims (20 s without input). Before the first sync, the page shows the login state instead.
+It stays on the event you scrolled to through syncs and as events start (if that event goes away, it moves to the next one after it). It goes back to the next event when you press Back, switch to the page, or after 2 minutes without turning the knob.
 
-- Fetches every calendar ticked in Google Calendar, from the start of today to 14 days ahead. Google expands recurring events. Declined events, cancelled events and Workspace "working location" markers are hidden. All-day events show on every day they cover.
+- Fetches every calendar ticked in Google Calendar, from the start of today to 14 days ahead. Google expands recurring events. Declined events, cancelled events and Workspace "working location" markers are hidden.
 - Re-fetches every 5 minutes. After an error it retries sooner (30 s, doubling) and keeps showing the last events. The terminal lists the next few events whenever they change.
 - `cargo run -- --demo` skips Google and shows made-up events, for working on the layout without a login.
 

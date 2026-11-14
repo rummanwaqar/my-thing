@@ -1,126 +1,301 @@
-import { Theme } from "../pomodoro/theme.slint";
-import { CalRow, CalRowKind } from "types.slint";
+import { CalBoard, CalEvent } from "types.slint";
 
-// One agenda line: a day header, an event, or "Nothing scheduled".
-component AgendaRow {
-    in property <CalRow> item;
+// Colors from the "A · Departures list" board of the design canvas: a light
+// board under a black header.
+global CalTheme {
+    out property <color> text: #ffffff;         // on the black header and chips
+    out property <color> ink: #111111;          // main text
+    out property <color> accent: #fccc0a;       // NOW row, sync problems
+    out property <color> accent-muted: #3d3300; // secondary text on the NOW row
+    out property <color> paper: #ffffff;
+    out property <color> header: #000000;
+    out property <color> header-pill: #262626;
+    out property <color> label: #444444;        // countdown units
+    out property <color> muted: #555555;        // detail lines
+    out property <color> divider: #e5e5e5;
+}
 
-    height: root.item.kind == CalRowKind.day ? 40px : 56px;
+// Event-kind letter in a colored circle (F focus, T booked by me, W not accepted, P other).
+component Badge {
+    in property <CalEvent> event;
+    in property <length> size: 28px;
+    in property <length> outline: 0px;
 
-    if root.item.kind == CalRowKind.day: Text {
-        x: 0;
-        y: parent.height - self.height - 6px;
-        text: root.item.label;
-        color: Theme.text-dim;
-        font-size: Theme.hint-size;
-        font-weight: 700;
+    width: root.size;
+    height: root.size;
+    Rectangle {
+        border-radius: root.size / 2;
+        background: root.event.color;
+        border-width: root.outline;
+        border-color: CalTheme.ink;
     }
+    Text {
+        text: root.event.badge;
+        color: root.event.ink;
+        font-size: root.size / 2;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
 
-    if root.item.kind != CalRowKind.day: Rectangle {
-        border-radius: 10px;
-        background: root.item.now ? Theme.pill : transparent;
-        opacity: root.item.past ? 0.4 : 1.0;
+// Big number over a small unit, right-aligned: "23" / "MIN".
+component Countdown {
+    in property <string> value;
+    in property <string> unit;
+    in property <color> unit-color: CalTheme.label;
 
-        HorizontalLayout {
-            padding-left: 10px;
-            padding-right: 10px;
-            spacing: 14px;
-
-            // Calendar color bar.
-            Rectangle {
-                width: 5px;
-                height: 34px;
-                y: (parent.height - self.height) / 2;
-                border-radius: 2.5px;
-                background: root.item.kind == CalRowKind.event ? root.item.color : transparent;
-            }
-            Text {
-                width: 130px;
-                vertical-alignment: center;
-                text: root.item.label;
-                color: root.item.now ? Theme.tomato : Theme.text-dim;
-                font-size: Theme.sub-size;
-                font-weight: root.item.now ? 700 : 600;
-            }
-            VerticalLayout {
-                alignment: center;
-                Text {
-                    text: root.item.title;
-                    color: root.item.kind == CalRowKind.empty ? Theme.hint : Theme.text;
-                    font-size: 20px;
-                    font-weight: 700;
-                    overflow: elide;
-                }
-                if root.item.detail != "": Text {
-                    text: root.item.detail;
-                    color: Theme.hint;
-                    font-size: Theme.hint-size;
-                    overflow: elide;
-                }
-            }
+    VerticalLayout {
+        alignment: center;
+        Text {
+            text: root.value;
+            color: CalTheme.ink;
+            font-size: 48px;
+            font-weight: 800;
+            horizontal-alignment: right;
+        }
+        Text {
+            text: root.unit;
+            color: root.unit-color;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            horizontal-alignment: right;
         }
     }
 }
 
-// The Calendar app: today's date, the agenda from the knob's scroll position,
-// and the login / sync status. Temporary look; real styling later.
-export component CalendarApp {
-    in property <string> today-label;   // e.g. "Saturday, 14 November"
-    in property <string> status;        // login state, or sync status once logged in
-    in property <bool> ready;           // logged in and synced at least once
-    in property <[CalRow]> rows;        // from the top visible row down
+// The event in progress: accent row, NOW chip, time left, progress bar.
+component NowRow {
+    in property <CalBoard> board;
 
+    height: 101px; // (480 − 72 header − 3 rule) / 4 rows
     Rectangle {
-        background: Theme.bg;
+        background: CalTheme.accent;
     }
-
-    VerticalLayout {
-        padding: 24px;
-        padding-top: 18px;
-        spacing: 6px;
-
-        HorizontalLayout {
-            spacing: 16px;
-            Text {
-                text: root.today-label;
-                color: Theme.text;
-                font-size: 26px;
-                font-weight: 800;
-                vertical-alignment: center;
+    HorizontalLayout {
+        padding-left: 24px;
+        padding-right: 24px;
+        spacing: 16px;
+        Badge {
+            event: root.board.now;
+            size: 44px;
+            outline: 2px;
+            y: (parent.height - self.height) / 2;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle {
+                    width: chip.preferred-width + 12px;
+                    height: 18px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 3px;
+                    background: CalTheme.ink;
+                    chip := Text {
+                        text: "NOW";
+                        color: CalTheme.text;
+                        font-size: 11px;
+                        font-weight: 800;
+                        letter-spacing: 1px;
+                    }
+                }
+                Text {
+                    horizontal-stretch: 1;
+                    text: root.board.now.title;
+                    color: CalTheme.ink;
+                    font-size: 24px;
+                    font-weight: 700;
+                    overflow: elide;
+                }
             }
-            if root.ready: Text {
-                horizontal-stretch: 1;
-                horizontal-alignment: right;
-                vertical-alignment: center;
-                text: root.status;
-                color: Theme.hint;
-                font-size: Theme.hint-size;
+            Text {
+                text: root.board.now.location == "" ? root.board.now.range : root.board.now.range + " · " + root.board.now.location;
+                color: CalTheme.accent-muted;
+                font-size: 15px;
                 overflow: elide;
             }
         }
+        Countdown {
+            value: root.board.now-left;
+            unit: root.board.now-left-unit;
+            unit-color: CalTheme.ink;
+        }
+    }
+    // How much of it is over.
+    Rectangle {
+        x: 0;
+        y: parent.height - self.height;
+        height: 5px;
+        width: parent.width * root.board.now-progress;
+        background: CalTheme.ink;
+    }
+}
 
-        // The list, clipped at the bottom.
+// An upcoming event: badge, title, detail, countdown.
+component DepartureRow {
+    in property <CalEvent> event;
+    in property <bool> last;
+
+    height: 101px; // (480 − 72 header − 3 rule) / 4 rows
+    HorizontalLayout {
+        padding-left: 24px;
+        padding-right: 24px;
+        spacing: 16px;
+        Badge {
+            event: root.event;
+            size: 44px;
+            y: (parent.height - self.height) / 2;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 4px;
+            Text {
+                text: root.event.title;
+                color: CalTheme.ink;
+                font-size: 24px;
+                font-weight: 700;
+                overflow: elide;
+            }
+            Text {
+                text: root.event.detail;
+                color: CalTheme.muted;
+                font-size: 15px;
+                overflow: elide;
+            }
+        }
+        Countdown {
+            value: root.event.big;
+            unit: root.event.big-unit;
+        }
+    }
+    if !root.last: Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: CalTheme.divider;
+    }
+}
+
+// The Calendar app (design "A · Departures list"): black header, then the event
+// in progress and the next departures as rows, like a station display.
+export component CalendarApp {
+    in property <string> today-label;   // "Wednesday, Nov 11"
+    in property <string> clock-label;   // "10:22"
+    in property <string> status;        // login state, or a sync problem
+    in property <bool> ready;           // logged in and synced at least once
+    in property <CalBoard> board;
+
+    Rectangle {
+        background: CalTheme.paper;
+    }
+
+    VerticalLayout {
+        // Header: date, sync problem if any, kind legend, all-day count, clock.
         Rectangle {
-            vertical-stretch: 1;
-            clip: true;
-
-            if root.ready: VerticalLayout {
-                alignment: start;
-                for row in root.rows: AgendaRow {
-                    item: row;
+            height: 72px;
+            background: CalTheme.header;
+            HorizontalLayout {
+                padding-left: 24px;
+                padding-right: 24px;
+                spacing: 16px;
+                Text {
+                    text: root.today-label;
+                    color: CalTheme.text;
+                    font-size: 28px;
+                    font-weight: 800;
+                    letter-spacing: -0.5px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    horizontal-stretch: 1;
+                    text: root.ready ? root.status : "";
+                    color: CalTheme.accent;
+                    font-size: 13px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                if root.ready: HorizontalLayout {
+                    spacing: 6px;
+                    alignment: center;
+                    for kind in root.board.legend: Badge {
+                        event: kind;
+                        size: 24px;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+                if root.ready && root.board.all-day-count > 0: Rectangle {
+                    width: pill.preferred-width + 24px;
+                    height: 28px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 14px;
+                    background: CalTheme.header-pill;
+                    pill := Text {
+                        text: root.board.all-day-count + " ALL-DAY";
+                        color: CalTheme.text;
+                        font-size: 13px;
+                        font-weight: 700;
+                        letter-spacing: 0.5px;
+                    }
+                }
+                Text {
+                    text: root.clock-label;
+                    color: CalTheme.text;
+                    font-size: 32px;
+                    font-weight: 700;
+                    vertical-alignment: center;
                 }
             }
-
-            // Before the first sync: the login state, large and centered.
-            if !root.ready: Text {
-                width: 80%;
-                text: root.status;
-                color: Theme.text-dim;
-                font-size: Theme.sub-size;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                wrap: word-wrap;
+            // White rule under the header (the black one follows below it).
+            Rectangle {
+                y: parent.height - 3px;
+                height: 3px;
+                background: CalTheme.text;
             }
+        }
+
+        // Black rule under the header's white one.
+        Rectangle {
+            height: 3px;
+            background: CalTheme.header;
+        }
+
+        if root.ready && root.board.has-now: NowRow {
+            board: root.board;
+        }
+        if root.ready: VerticalLayout {
+            for event[i] in root.board.departures: DepartureRow {
+                event: event;
+                last: i == root.board.departures.length - 1;
+            }
+        }
+        if root.ready && !root.board.has-now && root.board.departures.length == 0: Text {
+            vertical-stretch: 1;
+            text: "Nothing else scheduled";
+            color: CalTheme.muted;
+            font-size: 24px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        // Before the first sync: the login state, centered.
+        if !root.ready: Text {
+            vertical-stretch: 1;
+            text: root.status;
+            color: CalTheme.muted;
+            font-size: 20px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            wrap: word-wrap;
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
         }
     }
 }

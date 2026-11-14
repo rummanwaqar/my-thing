@@ -7,10 +7,10 @@ import "fonts/Fredoka-SemiBold.ttf"; // countdown digits
 import { PomoPhase, PomoView } from "pomodoro/types.slint";
 import { PomodoroApp } from "pomodoro/app.slint";
 import { CalendarApp } from "calendar/app.slint";
-import { CalRow, CalRowKind } from "calendar/types.slint";
+import { CalBoard, CalEvent } from "calendar/types.slint";
 
 // Re-exported so Rust can construct them (main.rs `push`).
-export { PomoPhase, PomoView, CalRow, CalRowKind }
+export { PomoPhase, PomoView, CalBoard, CalEvent }
 
 // Mirrors pages::Page.
 export enum AppPage { calendar, pomodoro }
@@ -25,10 +25,11 @@ export component MainWindow inherits Window {
     in property <AppPage> page;
     in property <PomoView> pomo;
     in property <[string]> preset-labels;   // "25 / 5", ... from pomodoro::PRESETS
-    in property <string> today-label;       // calendar placeholder
-    in property <string> google-status;     // login state, or "12 events · synced 12:03 · me@x"
+    in property <string> today-label;       // "Wednesday, Nov 11"
+    in property <string> clock-label;       // "10:22"
+    in property <string> google-status;     // login state, or a sync problem once logged in
     in property <bool> calendar-ready;      // logged in and synced at least once
-    in property <[CalRow]> calendar-rows;   // agenda, from the top visible row
+    in property <CalBoard> calendar-board;
 
     // Handled in Rust (main.rs). knob-turned is also invoked by the evdev knob thread on device.
     callback knob-turned(int); // +1 = clockwise; -1 = anticlockwise
@@ -56,9 +57,10 @@ export component MainWindow inherits Window {
             width: 100%;
             height: 100%;
             today-label: root.today-label;
+            clock-label: root.clock-label;
             status: root.google-status;
             ready: root.calendar-ready;
-            rows: root.calendar-rows;
+            board: root.calendar-board;
         }
         if root.page == AppPage.pomodoro: PomodoroApp {
             width: 100%;

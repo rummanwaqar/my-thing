@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use super::auth::{Auth, AuthError};
 use super::store::StoredLogin;
-use crate::calendar::{self, Event};
+use crate::calendar::{self, Event, Kind};
 
 /// Guard against a server that keeps sending page tokens.
 const MAX_PAGES: usize = 20;
@@ -21,7 +21,6 @@ pub struct CalendarEntry {
     #[serde(default)]
     pub summary: String,
     pub summary_override: Option<String>,
-    pub background_color: Option<String>,
     #[serde(default)]
     pub selected: bool,
     #[serde(default)]
@@ -53,8 +52,15 @@ pub struct ApiEvent {
     end: Option<When>,
     #[serde(default)]
     attendees: Vec<Attendee>,
+    organizer: Option<Organizer>,
     #[serde(default)]
     event_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct Organizer {
+    #[serde(rename = "self", default)]
+    is_self: bool,
 }
 
 /// Either `dateTime` (RFC 3339, timed) or `date` (YYYY-MM-DD, all-day).
@@ -79,6 +85,70 @@ fn shown(entries: Vec<CalendarEntry>) -> Vec<CalendarEntry> {
     entries.into_iter().filter(|c| c.selected && !c.hidden).collect()
 }
 
+/// The badge rules, first match wins:
+/// F focus time · T I booked it (I'm the organizer) · W an invitation I haven't
+/// accepted (needs action or tentative) · P everything else.
+fn kind(e: &ApiEvent) -> Kind {
+    if e.event_type == "focusTime" {
+        Kind::Focus
+    } else if e.organizer.as_ref().is_some_and(|o| o.is_self) {
+        Kind::Booked
+    } else if e.attendees.iter().any(|a| a.is_self && a.response_status != "accepted") {
+        Kind::Pending
+    } else {
+        Kind::Other
+    }
+}
+
+/// Location rule for office rooms. Room resources at 285W 5th look like
+/// "285W 5th-4FL-Room 306 (6)": building, floor, room, and occupancy in
+/// brackets. Keep just the room ("Room 306", "Main Conference Room (311)").
+/// Other locations are left alone. A list of rooms ("a, b") is tidied per room.
+fn tidy_location(location: &str) -> String {
+    location
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(tidy_room)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn tidy_room(part: &str) -> &str {
+    let squashed: String = part.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_ascii_lowercase();
+    if !squashed.contains("285w5th") {
+        return part;
+    }
+    let Some(room) = after_floor(part) else {
+        return part; // not a room resource: no floor marker
+    };
+    // Occupancy is the last bracket group; an earlier one (a room number) stays.
+    match room.strip_suffix(')').and_then(|r| r.rfind('(')) {
+        Some(open) => room[..open].trim_end(),
+        None => room,
+    }
+}
+
+/// What follows the last floor marker: digits, "FL", then "-" (any case,
+/// spaces allowed before and after the dash).
+fn after_floor(s: &str) -> Option<&str> {
+    // ASCII lowercasing keeps byte offsets, so indices map back onto `s`.
+    let b = s.to_ascii_lowercase().into_bytes();
+    let mut found = None;
+    for i in 1..b.len().saturating_sub(1) {
+        if b[i] == b'f' && b[i + 1] == b'l' && b[i - 1].is_ascii_digit() {
+            let mut j = i + 2;
+            while j < b.len() && b[j] == b' ' {
+                j += 1;
+            }
+            if j < b.len() && b[j] == b'-' {
+                found = Some(j + 1);
+            }
+        }
+    }
+    found.map(|k| s[k..].trim()).filter(|room| !room.is_empty())
+}
+
 /// None for events that shouldn't appear: cancelled, declined by me, Workspace
 /// "working location" markers, or without usable times.
 fn to_event(e: ApiEvent, cal: &CalendarEntry) -> Option<Event> {
@@ -92,12 +162,12 @@ fn to_event(e: ApiEvent, cal: &CalendarEntry) -> Option<Event> {
     let (end, _) = local(e.end.as_ref()?)?;
     Some(Event {
         calendar: cal.name().to_string(),
-        color: cal.background_color.clone(),
+        kind: kind(&e),
         title: e
             .summary
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| "(No title)".into()),
-        location: e.location.filter(|l| !l.trim().is_empty()),
+        location: e.location.map(|l| tidy_location(&l)).filter(|l| !l.is_empty()),
         start,
         end: end.max(start),
         all_day,
@@ -120,12 +190,12 @@ pub fn fetch(
     from: DateTime<Local>,
     to: DateTime<Local>,
 ) -> Result<Vec<Event>, AuthError> {
-    let fields = "items(id,summary,summaryOverride,backgroundColor,selected,hidden),nextPageToken";
+    let fields = "items(id,summary,summaryOverride,selected,hidden),nextPageToken";
     let calendars = shown(paged(auth, login, &["users", "me", "calendarList"], &[("fields", fields)])?);
 
     let time_min = from.to_rfc3339_opts(SecondsFormat::Secs, false);
     let time_max = to.to_rfc3339_opts(SecondsFormat::Secs, false);
-    let fields = "items(id,status,summary,location,start,end,attendees(self,responseStatus),eventType),nextPageToken";
+    let fields = "items(id,status,summary,location,start,end,attendees(self,responseStatus),organizer(self),eventType),nextPageToken";
     let query = [
         ("timeMin", time_min.as_str()),
         ("timeMax", time_max.as_str()),
@@ -179,7 +249,6 @@ mod tests {
             id: "me@example.com".into(),
             summary: "me@example.com".into(),
             summary_override: Some("Work".into()),
-            background_color: Some("#9fe1e7".into()),
             selected: true,
             hidden: false,
         }
@@ -199,7 +268,7 @@ mod tests {
         .unwrap();
         assert_eq!(e.title, "Standup");
         assert_eq!(e.calendar, "Work");
-        assert_eq!(e.color.as_deref(), Some("#9fe1e7"));
+        assert_eq!(e.kind, Kind::Other);
         assert_eq!(e.location.as_deref(), Some("Room 1"));
         assert!(!e.all_day);
         assert_eq!(e.start.with_timezone(&Utc), Utc.with_ymd_and_hms(2026, 11, 16, 9, 0, 0).unwrap());
@@ -227,6 +296,46 @@ mod tests {
         // Someone else declining doesn't hide it; no title gets a placeholder.
         let kept = event(&format!(r#"{{{times},"attendees":[{{"responseStatus":"declined"}},{{"self":true,"responseStatus":"accepted"}}]}}"#)).unwrap();
         assert_eq!(kept.title, "(No title)");
+    }
+
+    #[test]
+    fn office_rooms_keep_just_the_room() {
+        assert_eq!(tidy_location("285W 5th-4FL-Room 306 (6)"), "Room 306");
+        assert_eq!(tidy_location("285W 5th-3FL-Main Conference Room (311) (12)"), "Main Conference Room (311)");
+        assert_eq!(tidy_location("285 W 5th - 4fl - Room 306 (6)"), "Room 306");
+        assert_eq!(
+            tidy_location("285W 5th-4FL-Room 306 (6), 285W 5th-3FL-Main Conference Room (311) (12)"),
+            "Room 306, Main Conference Room (311)"
+        );
+        // Not the office, or no floor marker: unchanged.
+        assert_eq!(tidy_location("Studio 4A · Video call"), "Studio 4A · Video call");
+        assert_eq!(tidy_location("123 Main St-4FL-Room 1 (4)"), "123 Main St-4FL-Room 1 (4)");
+        assert_eq!(tidy_location("285 W 5th St, New York"), "285 W 5th St, New York");
+        // Applied when events are read.
+        let e = event(
+            r#"{"summary":"Sync","location":"285W 5th-4FL-Room 306 (6)",
+                "start":{"dateTime":"2026-11-16T10:00:00Z"},"end":{"dateTime":"2026-11-16T11:00:00Z"}}"#,
+        )
+        .unwrap();
+        assert_eq!(e.location.as_deref(), Some("Room 306"));
+    }
+
+    #[test]
+    fn badge_rules_in_order() {
+        let times = r#""start":{"dateTime":"2026-11-16T10:00:00Z"},"end":{"dateTime":"2026-11-16T11:00:00Z"}"#;
+        let k = |extra: &str| event(&format!("{{{times},{extra}}}")).unwrap().kind;
+        let me = |status: &str| format!(r#""attendees":[{{"email":"x@y","responseStatus":"accepted"}},{{"self":true,"responseStatus":"{status}"}}]"#);
+        // Focus time wins, even though I organize it.
+        assert_eq!(k(r#""eventType":"focusTime","organizer":{"self":true}"#), Kind::Focus);
+        // I booked it: organizer is me (with or without guests).
+        assert_eq!(k(r#""organizer":{"self":true}"#), Kind::Booked);
+        assert_eq!(k(&format!(r#""organizer":{{"self":true}},{}"#, me("accepted"))), Kind::Booked);
+        // Invitations I haven't accepted.
+        assert_eq!(k(&format!(r#""organizer":{{"email":"boss@x"}},{}"#, me("needsAction"))), Kind::Pending);
+        assert_eq!(k(&format!(r#""organizer":{{"email":"boss@x"}},{}"#, me("tentative"))), Kind::Pending);
+        // The rest: accepted invitations, events on other people's / shared calendars.
+        assert_eq!(k(&format!(r#""organizer":{{"email":"boss@x"}},{}"#, me("accepted"))), Kind::Other);
+        assert_eq!(k(r#""organizer":{"email":"holidays@group"}"#), Kind::Other);
     }
 
     #[test]

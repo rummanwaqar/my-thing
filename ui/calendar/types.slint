@@ -1,13 +1,24 @@
-// Mirrors calendar::RowKind.
-export enum CalRowKind { day, event, empty }
-
-// Mirrors calendar::Row (built in main.rs `CalendarUi::push`).
-export struct CalRow {
-    kind: CalRowKind,
-    label: string,    // day header, or the event's time ("09:00–09:30", "All day")
+// Mirrors calendar::EventView (built in main.rs `cal_event`).
+export struct CalEvent {
     title: string,
-    detail: string,   // location
-    color: color,     // the calendar's color
-    now: bool,        // in progress
-    past: bool,       // already over
+    detail: string,      // "10:45 · Studio 4A"
+    location: string,
+    range: string,       // "10:15 – 10:32"
+    big: string,         // "23", "1:08"
+    big-unit: string,    // "MIN", "HR", "DAYS"
+    badge: string,       // kind letter: F focus, T booked by me, W not accepted, P other
+    color: color,        // the kind's color
+    ink: color,          // readable text color on `color`
+}
+
+// Mirrors calendar::BoardView.
+export struct CalBoard {
+    has-now: bool,
+    now: CalEvent,
+    now-left: string,    // "10"
+    now-left-unit: string, // "MIN LEFT"
+    now-progress: float, // 0.0 → 1.0 of the event in progress
+    departures: [CalEvent], // departures list rows after the NOW row (3, or 4 without one)
+    all-day-count: int,
+    legend: [CalEvent],  // one badge per kind of event present, for the header
 }

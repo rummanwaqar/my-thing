@@ -13,7 +13,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use idle::Idle;
-use calendar::{Agenda, CalState, Row, RowKind};
+use calendar::{BoardView, CalState, EventView, Pick};
 use google::{Msg, Status};
 use pages::Page;
 use pomodoro::{PRESETS, Phase, Pomodoro, View};
@@ -39,7 +39,9 @@ fn main() -> Result<(), slint::PlatformError> {
     // timer below always updates the Pomodoro).
     let page = Rc::new(Cell::new(Page::FIRST));
     ui.set_page(Page::FIRST.into());
-    ui.set_today_label(today_label().into());
+    let (date, clock) = date_and_clock();
+    ui.set_today_label(date.into());
+    ui.set_clock_label(clock.into());
 
     // Google login and calendar fetching run on their own thread; the tick timer
     // drains its messages. `--logout` forgets the saved login first.
@@ -61,14 +63,15 @@ fn main() -> Result<(), slint::PlatformError> {
     // Each callback holds a Weak handle: a strong one would be a reference cycle
     // (the window owns the callback, the callback would own the window).
     // Every input first wakes the screen, then goes to the visible page only.
-    // Calendar: turn scrolls the agenda, press syncs now, Back jumps to now.
+    // Calendar: turn moves the departure through upcoming events, press syncs now,
+    // Back returns to the next event.
     ui.on_knob_turned({
         let (ui, pomo, idle, page, cal) = (ui.as_weak(), pomo.clone(), idle.clone(), page.clone(), cal.clone());
         move |delta| {
             wake(&idle);
             match page.get() {
                 Page::Pomodoro => apply(&ui, &pomo, |p, now| p.turn(delta, now)),
-                Page::Calendar => cal_action(&ui, &cal, |c| c.agenda.scroll(delta)),
+                Page::Calendar => cal_action(&ui, &cal, |c| c.scroll(delta)),
             }
         }
     });
@@ -91,7 +94,7 @@ fn main() -> Result<(), slint::PlatformError> {
             wake(&idle);
             match page.get() {
                 Page::Pomodoro => apply(&ui, &pomo, |p, _| p.back()),
-                Page::Calendar => cal_action(&ui, &cal, |c| c.agenda.back_to_now()),
+                Page::Calendar => cal_action(&ui, &cal, |c| c.back_to_next()),
             }
         }
     });
@@ -108,7 +111,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 ui.set_page(new.into());
             }
             if new == Page::Calendar {
-                cal_action(&ui, &cal, |c| c.agenda.back_to_now());
+                cal_action(&ui, &cal, |c| c.back_to_next());
             }
         }
     });
@@ -129,15 +132,15 @@ fn main() -> Result<(), slint::PlatformError> {
             };
             if let Some(dimmed) = idle.borrow_mut().tick(now, can_dim) {
                 backlight::set_dimmed(dimmed);
-                if dimmed {
-                    cal.borrow_mut().agenda.back_to_now(); // nobody's scrolling any more
-                }
             }
-            // Cheap, and catches midnight without a separate timer.
+            // Cheap, and catches the minute / midnight without separate timers.
             if let Some(ui) = ui.upgrade() {
-                let label = today_label();
-                if ui.get_today_label() != label.as_str() {
-                    ui.set_today_label(label.into());
+                let (date, clock) = date_and_clock();
+                if ui.get_today_label() != date.as_str() {
+                    ui.set_today_label(date.into());
+                }
+                if ui.get_clock_label() != clock.as_str() {
+                    ui.set_clock_label(clock.into());
                 }
                 let mut c = cal.borrow_mut();
                 while let Ok(msg) = google_msgs.try_recv() {
@@ -192,9 +195,10 @@ fn push(ui: &MainWindow, v: &View) {
     });
 }
 
-/// Today's date for the Calendar placeholder, e.g. "Saturday, 14 November".
-fn today_label() -> String {
-    chrono::Local::now().format("%A, %-d %B").to_string()
+/// The Calendar header: "Wednesday, Nov 11" and "10:22".
+fn date_and_clock() -> (String, String) {
+    let now = chrono::Local::now();
+    (now.format("%A, %b %-d").to_string(), now.format("%H:%M").to_string())
 }
 
 /// For `--demo`: a fake Google thread that is logged in and has sample events.
@@ -207,18 +211,21 @@ fn demo_calendar() -> (std::sync::mpsc::Sender<google::Cmd>, std::sync::mpsc::Re
     (cmd_tx, msg_rx)
 }
 
-/// Rows handed to Slint: about what fits on the 480 px screen, plus one.
-const VISIBLE_ROWS: usize = 9;
+/// How long the Calendar stays on an event the knob moved to, without input.
+const BROWSE_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Everything the Calendar page shows, on the UI thread.
 #[derive(Default)]
 struct CalendarUi {
     data: CalState,
-    agenda: Agenda,
+    /// The upcoming event the knob moved to; None shows the actual next event.
+    pick: Option<Pick>,
+    /// Last knob turn on the Calendar, for going back to the next event by itself.
+    browsed_at: Option<Instant>,
     /// Login state from the Google thread.
     status: Option<Status>,
-    /// The rows last given to Slint, to skip unchanged updates.
-    pushed: Vec<Row>,
+    /// The board last given to Slint, to skip unchanged updates.
+    pushed: Option<BoardView>,
 }
 
 impl CalendarUi {
@@ -240,14 +247,30 @@ impl CalendarUi {
         }
     }
 
-    /// Rebuilds the agenda for now and sets the Slint properties that changed.
+    /// Knob turn: move the departure through the upcoming events (clamped).
+    fn scroll(&mut self, delta: i32) {
+        let (events, now) = (&self.data.events, chrono::Local::now());
+        let max = calendar::upcoming_count(events, now).saturating_sub(1);
+        let current = calendar::offset_of(events, now, self.pick.as_ref());
+        let target = (current as i64 + i64::from(delta)).clamp(0, max as i64) as usize;
+        self.pick = calendar::pick_at(events, now, target);
+        self.browsed_at = Some(Instant::now());
+    }
+
+    fn back_to_next(&mut self) {
+        self.pick = None;
+        self.browsed_at = None;
+    }
+
+    /// Rebuilds the board for now and sets the Slint properties that changed.
     /// The only place calendar types turn into Slint types.
     fn push(&mut self, ui: &MainWindow) {
-        self.agenda.refresh(&self.data.events, chrono::Local::now());
         let (ready, line) = match &self.status {
-            Some(Status::LoggedIn { email }) => {
-                (self.data.last_sync.is_some(), format!("{} · {email}", self.data.sync_label()))
-            }
+            // Logged in: the header only mentions sync problems.
+            Some(Status::LoggedIn { .. }) => (
+                self.data.last_sync.is_some(),
+                if self.data.error.is_some() { self.data.sync_label() } else { String::new() },
+            ),
             Some(s) => (false, s.label()),
             None => (false, String::new()),
         };
@@ -257,11 +280,16 @@ impl CalendarUi {
         if ui.get_calendar_ready() != ready {
             ui.set_calendar_ready(ready);
         }
-        let visible = self.agenda.visible(VISIBLE_ROWS);
-        if visible != self.pushed.as_slice() {
-            self.pushed = visible.to_vec();
-            let rows: Vec<CalRow> = visible.iter().map(cal_row).collect();
-            ui.set_calendar_rows(ModelRc::new(VecModel::from(rows)));
+        // Left browsing for a while: back to the next event.
+        if self.browsed_at.is_some_and(|t| t.elapsed() >= BROWSE_TIMEOUT) {
+            self.back_to_next();
+        }
+        let now = chrono::Local::now();
+        let offset = calendar::offset_of(&self.data.events, now, self.pick.as_ref());
+        let board = calendar::board(&self.data.events, now, offset);
+        if self.pushed.as_ref() != Some(&board) {
+            ui.set_calendar_board(cal_board(&board));
+            self.pushed = Some(board);
         }
     }
 }
@@ -275,19 +303,34 @@ fn cal_action(ui: &slint::Weak<MainWindow>, cal: &RefCell<CalendarUi>, action: i
     }
 }
 
-fn cal_row(r: &Row) -> CalRow {
-    CalRow {
-        kind: match r.kind {
-            RowKind::Day => CalRowKind::Day,
-            RowKind::Event => CalRowKind::Event,
-            RowKind::Empty => CalRowKind::Empty,
-        },
-        label: r.label.as_str().into(),
-        title: r.title.as_str().into(),
-        detail: r.detail.as_str().into(),
-        color: r.color.as_deref().and_then(hex_color).unwrap_or(slint::Color::from_rgb_u8(0x88, 0x88, 0x88)),
-        now: r.now,
-        past: r.past,
+fn cal_board(b: &BoardView) -> CalBoard {
+    let list = |v: &[EventView]| ModelRc::new(VecModel::from(v.iter().map(cal_event).collect::<Vec<_>>()));
+    // Departures list: 4 rows of 94 px fit; the NOW row takes one.
+    let departures = &b.upcoming[..b.upcoming.len().min(if b.now.is_some() { 3 } else { 4 })];
+    CalBoard {
+        has_now: b.now.is_some(),
+        now: b.now.as_ref().map(cal_event).unwrap_or_default(),
+        now_left: b.now_left.0.as_str().into(),
+        now_left_unit: b.now_left.1.as_str().into(),
+        now_progress: b.now_progress,
+        departures: list(departures),
+        all_day_count: b.all_day_count as i32,
+        legend: list(&b.legend),
+    }
+}
+
+fn cal_event(e: &EventView) -> CalEvent {
+    let color = e.color.as_deref().and_then(hex_color).unwrap_or(slint::Color::from_rgb_u8(0x88, 0x88, 0x88));
+    CalEvent {
+        title: e.title.as_str().into(),
+        detail: e.detail.as_str().into(),
+        location: e.location.as_str().into(),
+        range: e.range.as_str().into(),
+        big: e.big.0.as_str().into(),
+        big_unit: e.big.1.as_str().into(),
+        badge: e.badge.to_string().into(),
+        color,
+        ink: ink_on(color),
     }
 }
 
@@ -296,6 +339,12 @@ fn hex_color(s: &str) -> Option<slint::Color> {
     let hex = s.strip_prefix('#').filter(|h| h.len() == 6)?;
     let n = u32::from_str_radix(hex, 16).ok()?;
     Some(slint::Color::from_rgb_u8((n >> 16) as u8, (n >> 8) as u8, n as u8))
+}
+
+/// Dark text on light badge colors, white on dark.
+fn ink_on(c: slint::Color) -> slint::Color {
+    let luma = 0.299 * f32::from(c.red()) + 0.587 * f32::from(c.green()) + 0.114 * f32::from(c.blue());
+    if luma > 150.0 { slint::Color::from_rgb_u8(0x11, 0x11, 0x11) } else { slint::Color::from_rgb_u8(0xff, 0xff, 0xff) }
 }
 
 /// After a sync that changed something: the next few events, to the terminal.
