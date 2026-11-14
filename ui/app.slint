@@ -7,9 +7,10 @@ import "fonts/Fredoka-SemiBold.ttf"; // countdown digits
 import { PomoPhase, PomoView } from "pomodoro/types.slint";
 import { PomodoroApp } from "pomodoro/app.slint";
 import { CalendarApp } from "calendar/app.slint";
+import { CalRow, CalRowKind } from "calendar/types.slint";
 
 // Re-exported so Rust can construct them (main.rs `push`).
-export { PomoPhase, PomoView }
+export { PomoPhase, PomoView, CalRow, CalRowKind }
 
 // Mirrors pages::Page.
 export enum AppPage { calendar, pomodoro }
@@ -26,7 +27,8 @@ export component MainWindow inherits Window {
     in property <[string]> preset-labels;   // "25 / 5", ... from pomodoro::PRESETS
     in property <string> today-label;       // calendar placeholder
     in property <string> google-status;     // login state, or "12 events · synced 12:03 · me@x"
-    in property <string> calendar-next;     // "Next: 14:00 Lunch"
+    in property <bool> calendar-ready;      // logged in and synced at least once
+    in property <[CalRow]> calendar-rows;   // agenda, from the top visible row
 
     // Handled in Rust (main.rs). knob-turned is also invoked by the evdev knob thread on device.
     callback knob-turned(int); // +1 = clockwise; -1 = anticlockwise
@@ -55,7 +57,8 @@ export component MainWindow inherits Window {
             height: 100%;
             today-label: root.today-label;
             status: root.google-status;
-            next: root.calendar-next;
+            ready: root.calendar-ready;
+            rows: root.calendar-rows;
         }
         if root.page == AppPage.pomodoro: PomodoroApp {
             width: 100%;

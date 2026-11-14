@@ -17,11 +17,19 @@ The knob, Enter and Back only reach the page that's showing. Hidden apps keep ru
 
 ## Calendar
 
-Shows your Google Calendar. For now it's a placeholder: today's date, the event in progress or the next one ("Next: 14:00 Lunch"), and a status line (login state, then "12 events · synced 12:03 · you@work.com"). Each time the events change, the terminal lists the next few.
+Shows your Google Calendar as an agenda: today's date and sync status at the top, then the events grouped under day headers (Today, Tomorrow, Mon 16 Nov, …). The current event is highlighted, finished ones are dimmed, and each has its calendar's color. Temporary look; real styling comes later.
 
-- Fetches every calendar ticked in Google Calendar, from the start of today to 14 days ahead. Google expands recurring events. Declined events, cancelled events and Workspace "working location" markers are hidden.
-- Re-fetches every 5 minutes. After an error it retries sooner (30 s, doubling) and keeps showing the last events.
-- Knob press (Enter) = sync now. Turn and Back do nothing yet. The backlight dims after 20 s without input.
+| Input | Calendar page |
+|---|---|
+| Knob turn | scroll one row (finished events are above) |
+| Knob press | sync now |
+| Back (Esc) | jump back to now |
+
+The list follows "now" until you scroll, and goes back to it on Back, when you switch to the page, or when the screen dims (20 s without input). Before the first sync, the page shows the login state instead.
+
+- Fetches every calendar ticked in Google Calendar, from the start of today to 14 days ahead. Google expands recurring events. Declined events, cancelled events and Workspace "working location" markers are hidden. All-day events show on every day they cover.
+- Re-fetches every 5 minutes. After an error it retries sooner (30 s, doubling) and keeps showing the last events. The terminal lists the next few events whenever they change.
+- `cargo run -- --demo` skips Google and shows made-up events, for working on the layout without a login.
 
 ### Google login
 

@@ -1,47 +1,126 @@
 import { Theme } from "../pomodoro/theme.slint";
+import { CalRow, CalRowKind } from "types.slint";
 
-// The Calendar app. Placeholder: date, current/next event, and login / sync
-// status. The event list comes next; real styling later.
+// One agenda line: a day header, an event, or "Nothing scheduled".
+component AgendaRow {
+    in property <CalRow> item;
+
+    height: root.item.kind == CalRowKind.day ? 40px : 56px;
+
+    if root.item.kind == CalRowKind.day: Text {
+        x: 0;
+        y: parent.height - self.height - 6px;
+        text: root.item.label;
+        color: Theme.text-dim;
+        font-size: Theme.hint-size;
+        font-weight: 700;
+    }
+
+    if root.item.kind != CalRowKind.day: Rectangle {
+        border-radius: 10px;
+        background: root.item.now ? Theme.pill : transparent;
+        opacity: root.item.past ? 0.4 : 1.0;
+
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 10px;
+            spacing: 14px;
+
+            // Calendar color bar.
+            Rectangle {
+                width: 5px;
+                height: 34px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 2.5px;
+                background: root.item.kind == CalRowKind.event ? root.item.color : transparent;
+            }
+            Text {
+                width: 130px;
+                vertical-alignment: center;
+                text: root.item.label;
+                color: root.item.now ? Theme.tomato : Theme.text-dim;
+                font-size: Theme.sub-size;
+                font-weight: root.item.now ? 700 : 600;
+            }
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: root.item.title;
+                    color: root.item.kind == CalRowKind.empty ? Theme.hint : Theme.text;
+                    font-size: 20px;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+                if root.item.detail != "": Text {
+                    text: root.item.detail;
+                    color: Theme.hint;
+                    font-size: Theme.hint-size;
+                    overflow: elide;
+                }
+            }
+        }
+    }
+}
+
+// The Calendar app: today's date, the agenda from the knob's scroll position,
+// and the login / sync status. Temporary look; real styling later.
 export component CalendarApp {
     in property <string> today-label;   // e.g. "Saturday, 14 November"
-    in property <string> next;          // e.g. "Next: 14:00 Lunch"
-    in property <string> status;        // login state or sync status
+    in property <string> status;        // login state, or sync status once logged in
+    in property <bool> ready;           // logged in and synced at least once
+    in property <[CalRow]> rows;        // from the top visible row down
 
     Rectangle {
         background: Theme.bg;
     }
 
     VerticalLayout {
-        alignment: center;
-        spacing: 12px;
+        padding: 24px;
+        padding-top: 18px;
+        spacing: 6px;
 
-        Text {
-            text: "Calendar";
-            color: Theme.text-dim;
-            font-size: Theme.sub-size;
-            font-weight: 600;
-            horizontal-alignment: center;
+        HorizontalLayout {
+            spacing: 16px;
+            Text {
+                text: root.today-label;
+                color: Theme.text;
+                font-size: 26px;
+                font-weight: 800;
+                vertical-alignment: center;
+            }
+            if root.ready: Text {
+                horizontal-stretch: 1;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+                text: root.status;
+                color: Theme.hint;
+                font-size: Theme.hint-size;
+                overflow: elide;
+            }
         }
-        Text {
-            text: root.today-label;
-            color: Theme.text;
-            font-size: 48px;
-            font-weight: 800;
-            horizontal-alignment: center;
-        }
-        Text {
-            text: root.next;
-            color: Theme.text;
-            font-size: Theme.sub-size;
-            horizontal-alignment: center;
-            overflow: elide;
-        }
-        Text {
-            text: root.status;
-            color: Theme.hint;
-            font-size: Theme.hint-size;
-            horizontal-alignment: center;
-            wrap: word-wrap;
+
+        // The list, clipped at the bottom.
+        Rectangle {
+            vertical-stretch: 1;
+            clip: true;
+
+            if root.ready: VerticalLayout {
+                alignment: start;
+                for row in root.rows: AgendaRow {
+                    item: row;
+                }
+            }
+
+            // Before the first sync: the login state, large and centered.
+            if !root.ready: Text {
+                width: 80%;
+                text: root.status;
+                color: Theme.text-dim;
+                font-size: Theme.sub-size;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                wrap: word-wrap;
+            }
         }
     }
 }

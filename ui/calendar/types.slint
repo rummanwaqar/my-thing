@@ -1,0 +1,13 @@
+// Mirrors calendar::RowKind.
+export enum CalRowKind { day, event, empty }
+
+// Mirrors calendar::Row (built in main.rs `CalendarUi::push`).
+export struct CalRow {
+    kind: CalRowKind,
+    label: string,    // day header, or the event's time ("09:00–09:30", "All day")
+    title: string,
+    detail: string,   // location
+    color: color,     // the calendar's color
+    now: bool,        // in progress
+    past: bool,       // already over
+}
