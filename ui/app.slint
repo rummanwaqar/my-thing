@@ -6,7 +6,7 @@ import "fonts/Fredoka-SemiBold.ttf"; // countdown digits
 
 import { PomoPhase, PomoView } from "pomodoro/types.slint";
 import { PomodoroApp } from "pomodoro/app.slint";
-import { CalendarApp } from "calendar/app.slint";
+import { CalendarApp, ReminderScreen } from "calendar/app.slint";
 import { CalBoard, CalEvent } from "calendar/types.slint";
 
 // Re-exported so Rust can construct them (main.rs `push`).
@@ -30,6 +30,8 @@ export component MainWindow inherits Window {
     in property <string> google-status;     // login state, or a sync problem once logged in
     in property <bool> calendar-ready;      // logged in and synced at least once
     in property <CalBoard> calendar-board;
+    in property <bool> reminder-visible;    // design D takeover, over any page
+    in property <CalEvent> reminder;
 
     // Handled in Rust (main.rs). knob-turned is also invoked by the evdev knob thread on device.
     callback knob-turned(int); // +1 = clockwise; -1 = anticlockwise
@@ -67,6 +69,13 @@ export component MainWindow inherits Window {
             height: 100%;
             pomo: root.pomo;
             preset-labels: root.preset-labels;
+        }
+        // Last, so it draws over either page.
+        if root.reminder-visible: ReminderScreen {
+            width: 100%;
+            height: 100%;
+            event: root.reminder;
+            clock-label: root.clock-label;
         }
     }
 }

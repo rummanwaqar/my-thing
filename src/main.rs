@@ -13,7 +13,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use idle::Idle;
-use calendar::{BoardView, CalState, EventView, Pick};
+use calendar::{BoardView, CalState, EventView, Pick, Reminders};
 use google::{Msg, Status};
 use pages::Page;
 use pomodoro::{PRESETS, Phase, Pomodoro, View};
@@ -62,13 +62,17 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // Each callback holds a Weak handle: a strong one would be a reference cycle
     // (the window owns the callback, the callback would own the window).
-    // Every input first wakes the screen, then goes to the visible page only.
-    // Calendar: turn moves the departure through upcoming events, press syncs now,
-    // Back returns to the next event.
+    // Every input first wakes the screen. A reminder takeover, when up, swallows
+    // the knob (nothing happens underneath) and Back dismisses it and shows the
+    // board. Otherwise input goes to the visible page only.
+    // Calendar: turn scrolls the departures, press syncs now, Back returns to the next event.
     ui.on_knob_turned({
         let (ui, pomo, idle, page, cal) = (ui.as_weak(), pomo.clone(), idle.clone(), page.clone(), cal.clone());
         move |delta| {
             wake(&idle);
+            if cal.borrow().reminder_up() {
+                return; // the reminder ignores turns, and the page underneath shouldn't move
+            }
             match page.get() {
                 Page::Pomodoro => apply(&ui, &pomo, |p, now| p.turn(delta, now)),
                 Page::Calendar => cal_action(&ui, &cal, |c| c.scroll(delta)),
@@ -76,9 +80,12 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
     ui.on_knob_pressed({
-        let (ui, pomo, idle, page) = (ui.as_weak(), pomo.clone(), idle.clone(), page.clone());
+        let (ui, pomo, idle, page, cal) = (ui.as_weak(), pomo.clone(), idle.clone(), page.clone(), cal.clone());
         move || {
             wake(&idle);
+            if cal.borrow().reminder_up() {
+                return; // Back dismisses; a press shouldn't act on the page underneath
+            }
             match page.get() {
                 Page::Pomodoro => apply(&ui, &pomo, |p, now| p.press(now)),
                 Page::Calendar => {
@@ -92,6 +99,16 @@ fn main() -> Result<(), slint::PlatformError> {
         let (ui, pomo, idle, page, cal) = (ui.as_weak(), pomo.clone(), idle.clone(), page.clone(), cal.clone());
         move || {
             wake(&idle);
+            if cal.borrow().reminder_up() {
+                page.set(Page::Calendar);
+                if let Some(ui) = ui.upgrade() {
+                    ui.set_page(Page::Calendar.into());
+                }
+                return cal_action(&ui, &cal, |c| {
+                    c.dismiss_reminder();
+                    c.back_to_next();
+                });
+            }
             match page.get() {
                 Page::Pomodoro => apply(&ui, &pomo, |p, _| p.back()),
                 Page::Calendar => cal_action(&ui, &cal, |c| c.back_to_next()),
@@ -102,6 +119,10 @@ fn main() -> Result<(), slint::PlatformError> {
         let (ui, idle, page, cal) = (ui.as_weak(), idle.clone(), page.clone(), cal.clone());
         move |n| {
             wake(&idle);
+            // A preset answers a reminder too: you've seen it.
+            if cal.borrow().reminder_up() {
+                cal_action(&ui, &cal, |c| c.dismiss_reminder());
+            }
             let Some(new) = Page::from_preset(n) else {
                 eprintln!("preset {n}: no app yet");
                 return;
@@ -124,15 +145,9 @@ fn main() -> Result<(), slint::PlatformError> {
         move || {
             // Always, even while the Calendar is shown: the Pomodoro keeps running.
             apply(&ui, &pomo, |p, now| p.tick(now));
-            let now = Instant::now();
-            // The Calendar is a glance screen, so it dims like the Pomodoro's Ready.
-            let can_dim = match page.get() {
-                Page::Calendar => true,
-                Page::Pomodoro => pomo.borrow().view(now).phase == Phase::Ready,
-            };
-            if let Some(dimmed) = idle.borrow_mut().tick(now, can_dim) {
-                backlight::set_dimmed(dimmed);
-            }
+            // Calendar before dimming: a reminder that appears wakes the screen,
+            // and keeps it bright while it's up.
+            let mut reminder_up = false;
             // Cheap, and catches the minute / midnight without separate timers.
             if let Some(ui) = ui.upgrade() {
                 let (date, clock) = date_and_clock();
@@ -147,7 +162,20 @@ fn main() -> Result<(), slint::PlatformError> {
                     c.handle(msg);
                 }
                 // Every tick, so "now" and past markers move; only changes reach Slint.
-                c.push(&ui);
+                if c.push(&ui) {
+                    wake(&idle);
+                }
+                reminder_up = c.reminder_up();
+            }
+            let now = Instant::now();
+            // The Calendar is a glance screen, so it dims like the Pomodoro's Ready.
+            let can_dim = !reminder_up
+                && match page.get() {
+                    Page::Calendar => true,
+                    Page::Pomodoro => pomo.borrow().view(now).phase == Phase::Ready,
+                };
+            if let Some(dimmed) = idle.borrow_mut().tick(now, can_dim) {
+                backlight::set_dimmed(dimmed);
             }
         }
     });
@@ -226,6 +254,10 @@ struct CalendarUi {
     status: Option<Status>,
     /// The board last given to Slint, to skip unchanged updates.
     pushed: Option<BoardView>,
+    /// Which reminder takeovers were dismissed.
+    reminders: Reminders,
+    /// The reminder last given to Slint; None while none is showing.
+    shown_reminder: Option<EventView>,
 }
 
 impl CalendarUi {
@@ -257,14 +289,28 @@ impl CalendarUi {
         self.browsed_at = Some(Instant::now());
     }
 
+    /// A reminder takeover is on screen (it gets the knob and Back).
+    fn reminder_up(&self) -> bool {
+        self.shown_reminder.is_some()
+    }
+
+    fn dismiss_reminder(&mut self) {
+        let now = chrono::Local::now();
+        if let Some(e) = self.reminders.due(&self.data.events, now).cloned() {
+            eprintln!("calendar: reminder dismissed: {}", e.title);
+            self.reminders.dismiss(&e);
+        }
+    }
+
     fn back_to_next(&mut self) {
         self.pick = None;
         self.browsed_at = None;
     }
 
-    /// Rebuilds the board for now and sets the Slint properties that changed.
-    /// The only place calendar types turn into Slint types.
-    fn push(&mut self, ui: &MainWindow) {
+    /// Rebuilds the board and reminder for now and sets the Slint properties that
+    /// changed. The only place calendar types turn into Slint types. Returns true
+    /// when a reminder has just appeared.
+    fn push(&mut self, ui: &MainWindow) -> bool {
         let (ready, line) = match &self.status {
             // Logged in: the header only mentions sync problems.
             Some(Status::LoggedIn { .. }) => (
@@ -291,6 +337,20 @@ impl CalendarUi {
             ui.set_calendar_board(cal_board(&board));
             self.pushed = Some(board);
         }
+
+        let reminder = self.reminders.due(&self.data.events, now).map(|e| calendar::reminder_view(e, now));
+        let appeared = reminder.as_ref().is_some_and(|r| self.shown_reminder.as_ref().is_none_or(|s| s.title != r.title));
+        if appeared {
+            eprintln!("calendar: reminder: {}", reminder.as_ref().map_or("", |r| r.title.as_str()));
+        }
+        if reminder != self.shown_reminder {
+            ui.set_reminder_visible(reminder.is_some());
+            if let Some(r) = &reminder {
+                ui.set_reminder(cal_event(r));
+            }
+            self.shown_reminder = reminder;
+        }
+        appeared
     }
 }
 

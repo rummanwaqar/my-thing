@@ -40,9 +40,21 @@ Office rooms at 285W 5th are shortened to just the room: `285W 5th-4FL-Room 306 
 
 It stays on the event you scrolled to through syncs and as events start (if that event goes away, it moves to the next one after it). It goes back to the next event when you press Back, switch to the page, or after 2 minutes without turning the knob.
 
+### Reminder takeover
+
+5 minutes before a timed event starts, a full-screen yellow "UP NEXT" reminder (design "D · Reminder takeover") covers whatever page is showing, Pomodoro included: the event's badge, title, time and location, and a big countdown. It wakes the screen and keeps it from dimming while it's up.
+
+| Input | Reminder |
+|---|---|
+| Knob turn / press | nothing |
+| Back (Esc) | dismiss and show the Calendar board |
+| Preset button | dismiss, then switch page as usual |
+
+After the start it counts up ("2 MIN AGO"), and if it isn't dismissed it dismisses itself 5 minutes after the start (or at the end, for shorter events). If several events are due, dismissing one shows the next. All-day events never take over.
+
 - Fetches every calendar ticked in Google Calendar, from the start of today to 14 days ahead. Google expands recurring events. Declined events, cancelled events and Workspace "working location" markers are hidden.
 - Re-fetches every 5 minutes. After an error it retries sooner (30 s, doubling) and keeps showing the last events. The terminal lists the next few events whenever they change.
-- `cargo run -- --demo` skips Google and shows made-up events, for working on the layout without a login.
+- `cargo run -- --demo` skips Google and shows made-up events, for working on the layout without a login. One starts within 5 minutes, so it opens on the reminder: press Back (Esc) to dismiss it.
 
 ### Google login
 

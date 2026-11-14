@@ -250,6 +250,76 @@ fn time_left(d: chrono::Duration) -> (String, String) {
     }
 }
 
+// ---------- Reminders: the takeover before an event ----------
+//
+// Design "D · Reminder takeover". A timed event's reminder is due from
+// `remind_before()` before its start until `keep_after_start()` after it (or
+// its end, if sooner), unless dismissed.
+
+/// How long before an event its reminder takes over the screen.
+pub fn remind_before() -> chrono::Duration {
+    chrono::Duration::minutes(5)
+}
+
+/// How long after the start an undismissed reminder stays up (then it dismisses itself).
+fn keep_after_start() -> chrono::Duration {
+    chrono::Duration::minutes(5)
+}
+
+/// Which reminders have been dismissed. Events are matched by start and title
+/// (like [`Pick`]), so a dismissal survives syncs.
+#[derive(Debug, Default)]
+pub struct Reminders {
+    dismissed: Vec<Pick>,
+}
+
+impl Pick {
+    fn of(e: &Event) -> Pick {
+        Pick { start: e.start, title: e.title.clone() }
+    }
+
+    fn matches(&self, e: &Event) -> bool {
+        self.start == e.start && self.title == e.title
+    }
+}
+
+impl Reminders {
+    /// The reminder to show at `now`: the earliest event that's due and not dismissed.
+    pub fn due<'a>(&self, events: &'a [Event], now: DateTime<Local>) -> Option<&'a Event> {
+        events.iter().find(|e| {
+            !e.all_day
+                && e.start - remind_before() <= now
+                && now < (e.start + keep_after_start()).min(e.end.max(e.start + chrono::Duration::seconds(1)))
+                && !self.dismissed.iter().any(|p| p.matches(e))
+        })
+    }
+
+    pub fn dismiss(&mut self, e: &Event) {
+        // Forget dismissals of events long gone.
+        let cutoff = e.start - chrono::Duration::days(1);
+        self.dismissed.retain(|p| !p.matches(e) && p.start > cutoff);
+        self.dismissed.push(Pick::of(e));
+    }
+}
+
+/// The takeover's labels: detail "10:45 – 11:30 · Studio 4A", and the big
+/// countdown to the start ("2", "MIN"), or since it ("3", "MIN AGO").
+pub fn reminder_view(e: &Event, now: DateTime<Local>) -> EventView {
+    let v = event_view(e, now);
+    EventView {
+        detail: match &e.location {
+            Some(l) => format!("{} · {l}", v.range),
+            None => v.range.clone(),
+        },
+        big: if now < e.start {
+            big_countdown(e.start - now)
+        } else {
+            ((now - e.start).num_minutes().to_string(), "MIN AGO".into())
+        },
+        ..v
+    }
+}
+
 /// Made-up events around `now`, for `--demo`: the Calendar page can be worked
 /// on without a Google login.
 pub fn sample_events(now: DateTime<Local>) -> Vec<Event> {
@@ -274,7 +344,8 @@ pub fn sample_events(now: DateTime<Local>) -> Vec<Event> {
     let mut v = vec![
         ev(Kind::Other, "Standup", now - mins(90), 15, "Google Meet"),
         ev(Kind::Booked, "Team coffee", now - mins(20), 30, ""),
-        ev(Kind::Pending, "Launch readiness review", now + mins(23), 25, "Studio 4A · Video call"),
+        // Within 5 minutes, so --demo opens on the reminder takeover (Back dismisses it).
+        ev(Kind::Pending, "Launch readiness review", now + mins(3), 45, "Studio 4A · Video call"),
         ev(Kind::Booked, "1:1 sync", now + mins(48), 20, ""),
         ev(Kind::Focus, "Deep work", now + mins(68), 60, ""),
         ev(Kind::Other, "Lunch", now + mins(128), 60, "Cafe Nero"),
@@ -429,5 +500,50 @@ mod tests {
         assert_eq!(time_left(chrono::Duration::seconds(30)), ("1".to_string(), "MIN LEFT".to_string()));
         assert_eq!(time_left(chrono::Duration::minutes(80)), ("1:20".to_string(), "HR LEFT".to_string()));
         assert_eq!(big_countdown(chrono::Duration::minutes(3 * 1440)), ("3".to_string(), "DAYS".to_string()));
+    }
+
+    // ---------- Reminders ----------
+
+    #[test]
+    fn reminder_window() {
+        let events = day_events(); // Launch review 10:45–11:15, 1:1 sync 11:10–11:30
+        let r = Reminders::default();
+        let due = |now| r.due(&events, now).map(|e| e.title.as_str());
+        assert_eq!(due(at(14, 10, 39)), None);
+        assert_eq!(due(at(14, 10, 40)), Some("Launch review")); // 5 min before
+        assert_eq!(due(at(14, 10, 49)), Some("Launch review")); // still up after the start
+        assert_eq!(due(at(14, 10, 50)), None); // 5 min after: dismissed by itself
+        assert_eq!(due(at(14, 11, 5)), Some("1:1 sync"));
+        // Short event: gone when it ends.
+        let short = vec![ev("Quick", at(14, 9, 0), 3)];
+        assert!(r.due(&short, at(14, 9, 2)).is_some());
+        assert!(r.due(&short, at(14, 9, 3)).is_none());
+        // All-day events never take over.
+        assert!(r.due(&[all_day("Offsite", 14)], at(14, 0, 0)).is_none());
+    }
+
+    #[test]
+    fn dismiss_shows_the_next_and_survives_syncs() {
+        let events = vec![ev("A", at(14, 10, 0), 30), ev("B", at(14, 10, 2), 30)];
+        let mut r = Reminders::default();
+        let now = at(14, 9, 58); // both within 5 minutes
+        assert_eq!(r.due(&events, now).unwrap().title, "A");
+        r.dismiss(&events[0]);
+        assert_eq!(r.due(&events, now).unwrap().title, "B"); // the next one due
+        r.dismiss(&events[1]);
+        assert!(r.due(&events, now).is_none());
+        // A sync brings new Event values with the same start and title: still dismissed.
+        let synced: Vec<Event> = events.clone();
+        assert!(r.due(&synced, at(14, 10, 1)).is_none());
+    }
+
+    #[test]
+    fn reminder_labels() {
+        let e = Event { location: Some("Studio 4A".into()), ..ev("Launch review", at(14, 10, 45), 45) };
+        let v = reminder_view(&e, at(14, 10, 43));
+        assert_eq!(v.detail, "10:45 – 11:30 · Studio 4A");
+        assert_eq!(v.big, ("2".to_string(), "MIN".to_string()));
+        assert_eq!(reminder_view(&e, at(14, 10, 48)).big, ("3".to_string(), "MIN AGO".to_string()));
+        assert_eq!(reminder_view(&ev("X", at(14, 10, 45), 15), at(14, 10, 43)).detail, "10:45 – 11:00");
     }
 }

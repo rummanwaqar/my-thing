@@ -299,3 +299,155 @@ export component CalendarApp {
         }
     }
 }
+
+// One line of the reminder's hint bar: a stroke icon and what the input does.
+component Hint {
+    in property <string> icon;   // SVG path commands on a 24×24 grid
+    in property <string> label;
+
+    HorizontalLayout {
+        spacing: 8px;
+        Path {
+            width: 22px;
+            height: 22px;
+            y: (parent.height - self.height) / 2;
+            viewbox-width: 24;
+            viewbox-height: 24;
+            commands: root.icon;
+            stroke: CalTheme.ink;
+            stroke-width: 2px;
+            fill: transparent;
+        }
+        Text {
+            text: root.label;
+            color: CalTheme.ink;
+            font-size: 16px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Design "D · Reminder takeover": full screen, 5 minutes before an event, over
+// whatever page is showing. main.rs handles its inputs while it's up.
+export component ReminderScreen {
+    in property <CalEvent> event;       // detail "10:45 – 11:30 · Studio 4A", big "2" / "MIN"
+    in property <string> clock-label;
+
+    // Swallow pointer input so nothing underneath reacts.
+    TouchArea { }
+    Rectangle {
+        background: CalTheme.accent;
+    }
+
+    VerticalLayout {
+        padding-top: 26px;
+        padding-bottom: 20px;
+        padding-left: 30px;
+        padding-right: 30px;
+        alignment: space-between;
+
+        HorizontalLayout {
+            Rectangle {
+                width: pill.preferred-width + 28px;
+                height: 36px;
+                border-radius: 18px;
+                background: CalTheme.ink;
+                pill := Text {
+                    text: "UP NEXT";
+                    color: CalTheme.text;
+                    font-size: 16px;
+                    font-weight: 800;
+                    letter-spacing: 2px;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.clock-label;
+                color: CalTheme.ink;
+                font-size: 26px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 24px;
+            Badge {
+                event: root.event;
+                size: 96px;
+                outline: 4px;
+                y: (parent.height - self.height) / 2;
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 10px;
+                Text {
+                    text: root.event.title;
+                    color: CalTheme.ink;
+                    font-size: 46px;
+                    font-weight: 900;
+                    letter-spacing: -1px;
+                    wrap: word-wrap;
+                    overflow: elide;
+                    max-height: 112px; // two lines
+                }
+                Text {
+                    text: root.event.detail;
+                    color: CalTheme.accent-muted;
+                    font-size: 20px;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+            }
+            // Big countdown, sized to the digits (Inter: baseline 0.969 em, cap height 0.727 em).
+            VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                Rectangle {
+                    // The −6 px letter spacing also comes off the last glyph's box,
+                    // which would clip its right edge: add it back.
+                    width: big.preferred-width + 6px;
+                    height: 109px; // 0.727 × 150
+                    big := Text {
+                        x: 0;
+                        y: -36px; // −(0.969 − 0.727) × 150
+                        width: parent.width;
+                        text: root.event.big;
+                        color: CalTheme.ink;
+                        font-size: 150px;
+                        font-weight: 900;
+                        letter-spacing: -6px;
+                    }
+                }
+                Text {
+                    text: root.event.big-unit;
+                    color: CalTheme.ink;
+                    font-size: 22px;
+                    font-weight: 800;
+                    letter-spacing: 1px;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 14px;
+            Rectangle {
+                height: 2px;
+                background: CalTheme.ink;
+            }
+            HorizontalLayout {
+                spacing: 32px;
+                alignment: start;
+                Hint {
+                    icon: "M9 14L4 9l5-5 M4 9h11a5 5 0 0 1 0 10h-3";
+                    label: "Back: dismiss";
+                }
+            }
+        }
+    }
+}
