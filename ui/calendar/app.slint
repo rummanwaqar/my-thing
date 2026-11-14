@@ -1,0 +1,37 @@
+import { Theme } from "../pomodoro/theme.slint";
+
+// The Calendar app. Placeholder until calendar data arrives (phase 2/3);
+// real styling comes later.
+export component CalendarApp {
+    in property <string> today-label;   // e.g. "Saturday, 14 November"
+
+    Rectangle {
+        background: Theme.bg;
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 12px;
+
+        Text {
+            text: "Calendar";
+            color: Theme.text-dim;
+            font-size: Theme.sub-size;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.today-label;
+            color: Theme.text;
+            font-size: 48px;
+            font-weight: 800;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: "No events yet";
+            color: Theme.hint;
+            font-size: Theme.hint-size;
+            horizontal-alignment: center;
+        }
+    }
+}

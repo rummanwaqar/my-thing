@@ -9,6 +9,16 @@
 
 Productivity app for the Spotify Car Thing.
 
+## Pages
+
+The preset buttons switch apps: **1 = Calendar** (shown at startup), **2 = Pomodoro**. 3 and 4 are unused.
+
+The knob, Enter and Back only reach the page that's showing. Hidden apps keep running, so a Pomodoro timer keeps counting down while the Calendar is on screen.
+
+## Calendar
+
+Placeholder for now: shows today's date and ignores the knob. The backlight dims after 20 s without input.
+
 ## Pomodoro
 
 ![Pomodoro screens: ready, focus, paused, focus done, break, break over](docs/pomodoro.gif)
@@ -23,9 +33,9 @@ Presets: 25/5, 50/10, 15/3 (focus/break minutes).
 | **Break** | skip → Ready | ±1 min, same clamp | → Ready | → BreakDone |
 | **BreakDone** (alarm) | start Focus | Break for 5 more minutes | → Ready | n/a |
 
-On the desktop: ←/→ = knob turn, Enter = knob press, Esc = back. To reach an alarm quickly, turn down to 1:00 in Focus or Break.
+On the desktop: ←/→ = knob turn, Enter = knob press, Esc = back, 1–4 = preset buttons. To reach an alarm quickly, turn down to 1:00 in Focus or Break.
 
-On Ready, the backlight dims after 20 s without input. Any input brightens it again and also does its normal action (e.g. a turn still changes the preset).
+On Ready (and on the Calendar), the backlight dims after 20 s without input. Any input brightens it again and also does its normal action (e.g. a turn still changes the preset).
 
 ## Desktop
 

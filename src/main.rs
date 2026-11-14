@@ -1,15 +1,17 @@
 mod backlight;
 mod idle;
+mod pages;
 mod pomodoro;
 
 #[cfg(feature = "device")]
 mod knob;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use idle::Idle;
+use pages::Page;
 use pomodoro::{PRESETS, Phase, Pomodoro, View};
 use slint::{ModelRc, SharedString, VecModel};
 
@@ -29,6 +31,12 @@ fn main() -> Result<(), slint::PlatformError> {
     // Idle starts bright; match it in case a previous run exited while dimmed.
     backlight::set_dimmed(false);
 
+    // Which app gets the knob / Enter / Esc. Hidden apps keep running (the tick
+    // timer below always updates the Pomodoro).
+    let page = Rc::new(Cell::new(Page::FIRST));
+    ui.set_page(Page::FIRST.into());
+    ui.set_today_label(today_label().into());
+
     let labels: Vec<SharedString> = PRESETS
         .iter()
         .map(|p| format!("{} / {}", p.focus_min, p.break_min).into())
@@ -37,33 +45,50 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // Each callback holds a Weak handle: a strong one would be a reference cycle
     // (the window owns the callback, the callback would own the window).
-    // Every input first wakes the screen, then is handled as usual.
+    // Every input first wakes the screen, then goes to the visible page only.
+    // The Calendar ignores input for now.
     ui.on_knob_turned({
-        let (ui, pomo, idle) = (ui.as_weak(), pomo.clone(), idle.clone());
+        let (ui, pomo, idle, page) = (ui.as_weak(), pomo.clone(), idle.clone(), page.clone());
         move |delta| {
             wake(&idle);
-            apply(&ui, &pomo, |p, now| p.turn(delta, now))
+            match page.get() {
+                Page::Pomodoro => apply(&ui, &pomo, |p, now| p.turn(delta, now)),
+                Page::Calendar => {}
+            }
         }
     });
     ui.on_knob_pressed({
-        let (ui, pomo, idle) = (ui.as_weak(), pomo.clone(), idle.clone());
+        let (ui, pomo, idle, page) = (ui.as_weak(), pomo.clone(), idle.clone(), page.clone());
         move || {
             wake(&idle);
-            apply(&ui, &pomo, |p, now| p.press(now))
+            match page.get() {
+                Page::Pomodoro => apply(&ui, &pomo, |p, now| p.press(now)),
+                Page::Calendar => {}
+            }
         }
     });
     ui.on_back({
-        let (ui, pomo, idle) = (ui.as_weak(), pomo.clone(), idle.clone());
+        let (ui, pomo, idle, page) = (ui.as_weak(), pomo.clone(), idle.clone(), page.clone());
         move || {
             wake(&idle);
-            apply(&ui, &pomo, |p, _| p.back())
+            match page.get() {
+                Page::Pomodoro => apply(&ui, &pomo, |p, _| p.back()),
+                Page::Calendar => {}
+            }
         }
     });
     ui.on_preset({
-        let idle = idle.clone();
+        let (ui, idle, page) = (ui.as_weak(), idle.clone(), page.clone());
         move |n| {
             wake(&idle);
-            eprintln!("preset {n}: app switching comes later")
+            let Some(new) = Page::from_preset(n) else {
+                eprintln!("preset {n}: no app yet");
+                return;
+            };
+            page.set(new);
+            if let Some(ui) = ui.upgrade() {
+                ui.set_page(new.into());
+            }
         }
     });
 
@@ -71,13 +96,25 @@ fn main() -> Result<(), slint::PlatformError> {
     // seconds would visibly stall or skip.
     let tick_timer = slint::Timer::default();
     tick_timer.start(slint::TimerMode::Repeated, Duration::from_millis(200), {
-        let (ui, pomo, idle) = (ui.as_weak(), pomo.clone(), idle.clone());
+        let (ui, pomo, idle, page) = (ui.as_weak(), pomo.clone(), idle.clone(), page.clone());
         move || {
+            // Always, even while the Calendar is shown: the Pomodoro keeps running.
             apply(&ui, &pomo, |p, now| p.tick(now));
             let now = Instant::now();
-            let on_ready = pomo.borrow().view(now).phase == Phase::Ready;
-            if let Some(dimmed) = idle.borrow_mut().tick(now, on_ready) {
+            // The Calendar is a glance screen, so it dims like the Pomodoro's Ready.
+            let can_dim = match page.get() {
+                Page::Calendar => true,
+                Page::Pomodoro => pomo.borrow().view(now).phase == Phase::Ready,
+            };
+            if let Some(dimmed) = idle.borrow_mut().tick(now, can_dim) {
                 backlight::set_dimmed(dimmed);
+            }
+            // Cheap, and catches midnight without a separate timer.
+            if let Some(ui) = ui.upgrade() {
+                let label = today_label();
+                if ui.get_today_label() != label.as_str() {
+                    ui.set_today_label(label.into());
+                }
             }
         }
     });
@@ -123,6 +160,20 @@ fn push(ui: &MainWindow, v: &View) {
         focus_min: v.focus_min as i32,
         break_min: v.break_min as i32,
     });
+}
+
+/// Today's date for the Calendar placeholder, e.g. "Saturday, 14 November".
+fn today_label() -> String {
+    chrono::Local::now().format("%A, %-d %B").to_string()
+}
+
+impl From<Page> for AppPage {
+    fn from(page: Page) -> Self {
+        match page {
+            Page::Calendar => AppPage::Calendar,
+            Page::Pomodoro => AppPage::Pomodoro,
+        }
+    }
 }
 
 impl From<Phase> for PomoPhase {
