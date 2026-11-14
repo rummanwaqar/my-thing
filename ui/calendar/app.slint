@@ -1,9 +1,11 @@
 import { Theme } from "../pomodoro/theme.slint";
 
-// The Calendar app. Placeholder until calendar data arrives (phase 2/3);
-// real styling comes later.
+// The Calendar app. Placeholder: date, current/next event, and login / sync
+// status. The event list comes next; real styling later.
 export component CalendarApp {
     in property <string> today-label;   // e.g. "Saturday, 14 November"
+    in property <string> next;          // e.g. "Next: 14:00 Lunch"
+    in property <string> status;        // login state or sync status
 
     Rectangle {
         background: Theme.bg;
@@ -28,10 +30,18 @@ export component CalendarApp {
             horizontal-alignment: center;
         }
         Text {
-            text: "No events yet";
+            text: root.next;
+            color: Theme.text;
+            font-size: Theme.sub-size;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+        Text {
+            text: root.status;
             color: Theme.hint;
             font-size: Theme.hint-size;
             horizontal-alignment: center;
+            wrap: word-wrap;
         }
     }
 }

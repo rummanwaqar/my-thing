@@ -1,4 +1,6 @@
 mod backlight;
+mod calendar;
+mod google;
 mod idle;
 mod pages;
 mod pomodoro;
@@ -11,6 +13,8 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use idle::Idle;
+use calendar::CalState;
+use google::{Msg, Status};
 use pages::Page;
 use pomodoro::{PRESETS, Phase, Pomodoro, View};
 use slint::{ModelRc, SharedString, VecModel};
@@ -37,6 +41,13 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.set_page(Page::FIRST.into());
     ui.set_today_label(today_label().into());
 
+    // Google login and calendar fetching run on their own thread; the tick timer
+    // drains its messages. `--logout` forgets the saved login first.
+    let logout = std::env::args().any(|a| a == "--logout");
+    let (google_cmds, google_msgs) = google::spawn(logout);
+    let cal = Rc::new(RefCell::new(CalState::default()));
+    let mut google_status: Option<Status> = None;
+
     let labels: Vec<SharedString> = PRESETS
         .iter()
         .map(|p| format!("{} / {}", p.focus_min, p.break_min).into())
@@ -46,7 +57,7 @@ fn main() -> Result<(), slint::PlatformError> {
     // Each callback holds a Weak handle: a strong one would be a reference cycle
     // (the window owns the callback, the callback would own the window).
     // Every input first wakes the screen, then goes to the visible page only.
-    // The Calendar ignores input for now.
+    // On the Calendar only a press does something for now: sync now.
     ui.on_knob_turned({
         let (ui, pomo, idle, page) = (ui.as_weak(), pomo.clone(), idle.clone(), page.clone());
         move |delta| {
@@ -63,7 +74,10 @@ fn main() -> Result<(), slint::PlatformError> {
             wake(&idle);
             match page.get() {
                 Page::Pomodoro => apply(&ui, &pomo, |p, now| p.press(now)),
-                Page::Calendar => {}
+                Page::Calendar => {
+                    eprintln!("calendar: refresh requested");
+                    let _ = google_cmds.send(google::Cmd::RefreshNow);
+                }
             }
         }
     });
@@ -115,6 +129,25 @@ fn main() -> Result<(), slint::PlatformError> {
                 if ui.get_today_label() != label.as_str() {
                     ui.set_today_label(label.into());
                 }
+                while let Ok(msg) = google_msgs.try_recv() {
+                    let mut c = cal.borrow_mut();
+                    match msg {
+                        Msg::Status(s) => {
+                            // A new login may be a different account: drop its events.
+                            if s == Status::WaitingForBrowser {
+                                *c = CalState::default();
+                            }
+                            google_status = Some(s);
+                        }
+                        Msg::Synced { events, at } => {
+                            if c.apply_sync(events, at) {
+                                log_upcoming(&c);
+                            }
+                        }
+                        Msg::SyncFailed(e) => c.apply_error(e),
+                    }
+                }
+                push_calendar(&ui, &cal.borrow(), google_status.as_ref());
             }
         }
     });
@@ -165,6 +198,38 @@ fn push(ui: &MainWindow, v: &View) {
 /// Today's date for the Calendar placeholder, e.g. "Saturday, 14 November".
 fn today_label() -> String {
     chrono::Local::now().format("%A, %-d %B").to_string()
+}
+
+/// Calendar placeholder: the current / next event, and one status line (the login
+/// state until logged in, then sync status). Runs every tick, so it only sets
+/// properties that changed.
+fn push_calendar(ui: &MainWindow, cal: &CalState, status: Option<&Status>) {
+    let now = chrono::Local::now();
+    let (next, line) = match status {
+        Some(Status::LoggedIn { email }) => (cal.next_label(now), format!("{} · {email}", cal.sync_label())),
+        Some(s) => (String::new(), s.label()),
+        None => (String::new(), String::new()),
+    };
+    if ui.get_calendar_next() != next.as_str() {
+        ui.set_calendar_next(next.into());
+    }
+    if ui.get_google_status() != line.as_str() {
+        ui.set_google_status(line.into());
+    }
+}
+
+/// After a sync that changed something: the next few events, to the terminal.
+fn log_upcoming(cal: &CalState) {
+    eprintln!("calendar: {}", cal.sync_label());
+    let now = chrono::Local::now();
+    for e in cal.events.iter().filter(|e| e.end > now).take(5) {
+        let when = if e.all_day {
+            e.start.format("%a %d %b, all day").to_string()
+        } else {
+            format!("{}–{}", e.start.format("%a %d %b %H:%M"), e.end.format("%H:%M"))
+        };
+        eprintln!("calendar:   {when}  {}  [{}]", e.title, e.calendar);
+    }
 }
 
 impl From<Page> for AppPage {
