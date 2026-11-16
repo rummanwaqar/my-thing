@@ -153,18 +153,17 @@ just ssh                       # root@my-thing.local
 
 The device has no network of its own. It gets the internet through the computer it's plugged into, over the USB network: the device is `10.42.1.74`, the computer is `10.42.1.73`. It needs it for Google Calendar and for the clock (there's no battery-backed clock).
 
-**On the computer (once):** share its internet with the device. This needs NetworkManager and ufw, and asks for sudo:
+**On the computer (once):** share its internet with the device. This needs NetworkManager, systemd and iptables, and asks for sudo:
 
 ```sh
 scripts/host-share-internet.sh          # with the device plugged in
-scripts/host-share-internet.sh --undo   # remove it again
+scripts/host-share-internet.sh --undo   # remove it again (device not needed)
 ```
 
 It:
 - adds a NetworkManager profile `my-thing-usb` that gives the computer the fixed address `10.42.1.73/29` on the device's USB link. The profile is matched by the link's MAC, so any USB port works, and it's never used as the computer's own default route.
-- turns on IPv4 forwarding in `/etc/ufw/sysctl.conf`.
-- adds a NAT (masquerade) block for `10.42.1.72/29` to `/etc/ufw/before.rules`, keeping a backup.
-- adds `ufw route allow from 10.42.1.72/29`, then reloads ufw.
+- installs and enables a systemd service, `my-thing-share-internet`, that runs at boot. It turns on IPv4 forwarding and adds iptables rules (`scripts/host-nat.sh`) in their own chains: `MY-THING-FWD` lets `10.42.1.72/29` through, placed first in `FORWARD` so a firewall like ufw doesn't drop it, and `MY-THING-NAT` masquerades it. Stopping the service removes the rules. Check it with `systemctl status my-thing-share-internet`.
+- removes the older ufw-based setup (the NAT block in `/etc/ufw/before.rules` and the ufw route rule) if an earlier version of the script added it.
 
 It's safe to run again. With the device unplugged, give the values yourself: `MY_THING_MAC=02:11:44:… MY_THING_NET=10.42.1.72/29 scripts/host-share-internet.sh`.
 

@@ -10,22 +10,30 @@
 #   1. NetworkManager profile "my-thing-usb": the device's USB link, matched by
 #      its MAC (stable: derived from the device serial, so any USB port works),
 #      static .73/29, never used as this computer's default route.
-#   2. ufw (the active firewall): IPv4 forwarding on, masquerade for the /29,
-#      and a route rule allowing the device's traffic through.
+#   2. systemd service "my-thing-share-internet": at boot, turns on IPv4
+#      forwarding and adds iptables rules (scripts/host-nat.sh) that let the
+#      device's traffic through and masquerade it. Stopping it removes them.
 #
-# Safe to run again. Needs sudo for the ufw part.
+# Also removes the older ufw-based setup (before.rules block, route rule) if an
+# earlier version of this script added it. Safe to run again. Needs sudo.
 #
 # Usage: scripts/host-share-internet.sh          set up (device plugged in)
-#        scripts/host-share-internet.sh --undo   remove it again
+#        scripts/host-share-internet.sh --undo   remove it again (device not needed)
 # Env:   MY_THING_MAC=02:11:44:..  MY_THING_NET=10.42.1.72/29
 #        Use these when the device isn't plugged in; otherwise they're detected.
 set -eu
 
 PROFILE=my-thing-usb
-RULES=/etc/ufw/before.rules
-SYSCTL=/etc/ufw/sysctl.conf
-BEGIN="# BEGIN my-thing: NAT for the Car Thing (scripts/host-share-internet.sh)"
-END="# END my-thing"
+SERVICE=my-thing-share-internet
+UNIT=/etc/systemd/system/$SERVICE.service
+HELPER=/usr/local/lib/my-thing/host-nat.sh
+ENVFILE=/etc/default/$SERVICE
+here=$(cd "$(dirname "$0")" && pwd)
+
+# Left by earlier versions of this script, which used ufw.
+UFW_RULES=/etc/ufw/before.rules
+UFW_BEGIN="# BEGIN my-thing: NAT for the Car Thing (scripts/host-share-internet.sh)"
+UFW_END="# END my-thing"
 
 say() { printf '\n==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -53,8 +61,50 @@ net_of() {
     echo "${ip%.*}.$(( last / 8 * 8 ))/29"
 }
 
+# Older ufw-based setup: drop its NAT block and route rule (no-op if absent).
+# The network comes from the block itself, so this works with the device unplugged.
+remove_old_ufw() {
+    if [ -f "$UFW_RULES" ] && sudo grep -qF "$UFW_BEGIN" "$UFW_RULES"; then
+        old_net=$(sudo sed -n "\|^$UFW_BEGIN\$|,\|^$UFW_END\$|s|.*-s \([0-9./]*\) .*|\1|p" "$UFW_RULES" | head -n 1)
+        echo "removing the old NAT block from $UFW_RULES (backup: $UFW_RULES.my-thing.bak)"
+        sudo cp "$UFW_RULES" "$UFW_RULES.my-thing.bak"
+        sudo sed -i "\|^$UFW_BEGIN\$|,\|^$UFW_END\$|d" "$UFW_RULES"
+        if command -v ufw >/dev/null; then
+            [ -z "$old_net" ] || sudo ufw route delete allow from "$old_net" >/dev/null 2>&1 || true
+            sudo ufw reload >/dev/null
+        fi
+    else
+        echo "(none)"
+    fi
+}
+
 command -v nmcli >/dev/null || die "nmcli not found (this script expects NetworkManager)"
-command -v ufw >/dev/null || die "ufw not found (this script expects ufw as the firewall)"
+
+# Undo needs nothing from the device, so it works with it unplugged.
+if [ "${1-}" = "--undo" ]; then
+    say "Removing NetworkManager profile $PROFILE"
+    nmcli connection delete "$PROFILE" 2>/dev/null || echo "(not there)"
+
+    say "Removing service $SERVICE"
+    if [ -f "$UNIT" ]; then
+        sudo systemctl disable --now "$SERVICE" || true
+        sudo rm -f "$UNIT" "$ENVFILE" "$HELPER"
+        sudo rmdir "$(dirname "$HELPER")" 2>/dev/null || true
+        sudo systemctl daemon-reload
+    else
+        echo "(not there)"
+    fi
+
+    say "Removing the old ufw setup"
+    remove_old_ufw
+
+    echo
+    echo "Done. IPv4 forwarding stays on until the next reboot (other tools may rely on it)."
+    exit 0
+fi
+
+command -v iptables >/dev/null || die "iptables not found"
+command -v systemctl >/dev/null || die "systemctl not found (this script expects systemd)"
 
 mac=${MY_THING_MAC-}
 net=${MY_THING_NET-}
@@ -78,29 +128,7 @@ host_ip="${base%.*}.$(( ${base##*.} + 1 ))"
 device_ip="${base%.*}.$(( ${base##*.} + 2 ))"
 echo "Car Thing: MAC $mac${iface:+ on $iface}, network $net (host $host_ip, device $device_ip)"
 
-if [ "${1-}" = "--undo" ]; then
-    say "Removing NetworkManager profile $PROFILE"
-    nmcli connection delete "$PROFILE" 2>/dev/null || echo "(not there)"
-
-    say "Removing the NAT block from $RULES"
-    if sudo grep -qF "$BEGIN" "$RULES"; then
-        sudo cp "$RULES" "$RULES.my-thing.bak"
-        sudo sed -i "\|^$BEGIN\$|,\|^$END\$|d" "$RULES"
-    else
-        echo "(not there)"
-    fi
-
-    say "Removing the ufw route rule"
-    sudo ufw route delete allow from "$net" || true
-    sudo ufw reload
-
-    echo
-    echo "Done. IPv4 forwarding in $SYSCTL is left on (other tools may rely on it);"
-    echo "comment out net/ipv4/ip_forward=1 there and run 'sudo ufw reload' to turn it off."
-    exit 0
-fi
-
-say "1/4 NetworkManager profile $PROFILE: $host_ip/29 on MAC $mac"
+say "1/3 NetworkManager profile $PROFILE: $host_ip/29 on MAC $mac"
 nmcli -t -f NAME connection show | grep -qx "$PROFILE" ||
     nmcli connection add type ethernet con-name "$PROFILE" ifname "*" >/dev/null
 nmcli connection modify "$PROFILE" \
@@ -114,44 +142,33 @@ if [ -n "$iface" ]; then
     nmcli connection up "$PROFILE" ifname "$iface" >/dev/null && echo "active on $iface"
 fi
 
-say "2/4 IPv4 forwarding in $SYSCTL"
-if sudo grep -q '^net/ipv4/ip_forward=1' "$SYSCTL"; then
-    echo "(already on)"
-elif sudo grep -q '^#[[:space:]]*net/ipv4/ip_forward=1' "$SYSCTL"; then
-    sudo sed -i 's|^#[[:space:]]*net/ipv4/ip_forward=1|net/ipv4/ip_forward=1|' "$SYSCTL"
-    echo "uncommented"
-else
-    echo 'net/ipv4/ip_forward=1' | sudo tee -a "$SYSCTL" >/dev/null
-    echo "added"
-fi
+say "2/3 Service $SERVICE: iptables NAT for $net"
+sudo install -D -m 0755 "$here/host-nat.sh" "$HELPER"
+echo "MY_THING_NET=$net" | sudo tee "$ENVFILE" >/dev/null
+sudo tee "$UNIT" >/dev/null <<UNIT
+[Unit]
+Description=Share internet with the Car Thing over USB (my-thing)
+# After any firewall, so its rules load first and ours go in front of them.
+After=network.target ufw.service iptables.service nftables.service firewalld.service
 
-say "3/4 Masquerade for $net in $RULES"
-sudo grep -q '^\*filter' "$RULES" || die "no *filter section in $RULES; is this a ufw before.rules?"
-sudo cp "$RULES" "$RULES.my-thing.bak"
-# One pass: drop our block from an earlier run (the network may have changed),
-# and put the new one before ufw's *filter table (*nat has to come first).
-tmp=$(mktemp)
-sudo awk -v begin="$BEGIN" -v end="$END" -v net="$net" '
-    $0 == begin { skip = 1 }
-    skip { if ($0 == end) skip = 0; next }
-    !done && /^\*filter/ {
-        print begin
-        print "*nat"
-        print ":POSTROUTING ACCEPT [0:0]"
-        print "-A POSTROUTING -s " net " ! -d " net " -j MASQUERADE"
-        print "COMMIT"
-        print end
-        done = 1
-    }
-    { print }
-' "$RULES" > "$tmp"
-sudo install -m 0640 -o root -g root "$tmp" "$RULES"
-rm -f "$tmp"
-echo "written (backup: $RULES.my-thing.bak)"
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=$ENVFILE
+ExecStart=$HELPER start
+ExecStop=$HELPER stop
 
-say "4/4 ufw: allow the device's traffic through, then reload"
-sudo ufw route allow from "$net" comment 'my-thing Car Thing'
-sudo ufw reload
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl daemon-reload
+sudo systemctl enable "$SERVICE" >/dev/null
+# Restart, not start: picks up a changed network or helper on a re-run.
+sudo systemctl restart "$SERVICE"
+echo "enabled and running ($UNIT)"
+
+say "3/3 Removing the old ufw setup, if any"
+remove_old_ufw
 
 say "Check"
 if ping -c 1 -W 2 "$device_ip" >/dev/null 2>&1; then
@@ -163,5 +180,6 @@ cat <<EOF
 
 Done. Check from the device (the image's my-thing-uplink sets its route at boot):
   ssh root@my-thing.local 'ip route; resolvectl query oauth2.googleapis.com; ping -c 1 1.1.1.1'
-Undo: $0 --undo
+Status: systemctl status $SERVICE
+Undo:   $0 --undo
 EOF
