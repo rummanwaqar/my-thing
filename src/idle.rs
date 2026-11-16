@@ -1,5 +1,5 @@
 //! When to dim the screen: after DIM_AFTER without input on a screen that allows
-//! it (the Calendar, or the Pomodoro Ready screen; main.rs decides).
+//! it (the Pomodoro Ready screen; main.rs decides).
 //!
 //! No UI or sysfs code. Like `pomodoro.rs`, every method takes `now`, so tests
 //! can jump ahead without sleeping.

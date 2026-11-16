@@ -163,10 +163,10 @@ fn main() -> Result<(), slint::PlatformError> {
                 reminder_up = c.reminder_up();
             }
             let now = Instant::now();
-            // The Calendar is a glance screen, so it dims like the Pomodoro's Ready.
+            // Only the Pomodoro's Ready screen dims; the Calendar stays bright.
             let can_dim = !reminder_up
                 && match page.get() {
-                    Page::Calendar => true,
+                    Page::Calendar => false,
                     Page::Pomodoro => pomo.borrow().view(now).phase == Phase::Ready,
                 };
             if let Some(dimmed) = idle.borrow_mut().tick(now, can_dim) {
