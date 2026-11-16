@@ -13,6 +13,9 @@ global CalTheme {
     out property <color> label: #444444;        // countdown units
     out property <color> muted: #555555;        // detail lines
     out property <color> divider: #e5e5e5;
+
+    // Side insets: the Car Thing's knob covers part of the screen's edge.
+    out property <length> pad-x: 48px;
 }
 
 // Event-kind letter in a colored circle (F focus, T booked by me, W not accepted, P other).
@@ -74,8 +77,8 @@ component NowRow {
         background: CalTheme.accent;
     }
     HorizontalLayout {
-        padding-left: 24px;
-        padding-right: 24px;
+        padding-left: CalTheme.pad-x;
+        padding-right: CalTheme.pad-x;
         spacing: 16px;
         Badge {
             event: root.board.now;
@@ -142,8 +145,8 @@ component DepartureRow {
 
     height: 101px; // (480 − 72 header − 3 rule) / 4 rows
     HorizontalLayout {
-        padding-left: 24px;
-        padding-right: 24px;
+        padding-left: CalTheme.pad-x;
+        padding-right: CalTheme.pad-x;
         spacing: 16px;
         Badge {
             event: root.event;
@@ -199,8 +202,8 @@ export component CalendarApp {
             height: 72px;
             background: CalTheme.header;
             HorizontalLayout {
-                padding-left: 24px;
-                padding-right: 24px;
+                padding-left: CalTheme.pad-x;
+                padding-right: CalTheme.pad-x;
                 spacing: 16px;
                 Text {
                     text: root.today-label;
@@ -343,8 +346,8 @@ export component ReminderScreen {
     VerticalLayout {
         padding-top: 26px;
         padding-bottom: 20px;
-        padding-left: 30px;
-        padding-right: 30px;
+        padding-left: CalTheme.pad-x;
+        padding-right: CalTheme.pad-x;
         alignment: space-between;
 
         HorizontalLayout {
